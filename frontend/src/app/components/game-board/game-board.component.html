@@ -1,0 +1,8 @@
+<div class="game-board">
+    <button *ngFor="let cell of board; let i = index" class="board-cell" [class.filled]="cell !== ' '"
+        [class.x-mark]="cell === 'X'" [class.o-mark]="cell === 'O'" (click)="onCellClick(i)"
+        [disabled]="disabled || cell !== ' '"
+        [attr.aria-label]="'Cell ' + (i + 1) + ': ' + (cell === ' ' ? 'empty' : cell)" type="button">
+        <span class="cell-content">{{ cell }}</span>
+    </button>
+</div>

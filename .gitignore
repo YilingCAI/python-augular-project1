@@ -19,3 +19,7 @@ Thumbs.db
 *.backup
 *.tmp
 *.log
+
+.pytest_cache
+
+archive/

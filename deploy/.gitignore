@@ -8,3 +8,6 @@ docker-compose.override.*.yml
 *.sock
 docker-compose.override.yml
 *.tmp
+
+.pytest_cache
+postgres_data

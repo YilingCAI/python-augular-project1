@@ -51,7 +51,7 @@ def read_my_profile(current_user: User = Depends(get_current_user)):
 
 
 
-@router.post("/login")
+@router.post("/login", response_model=dict, status_code=status.HTTP_200_OK)
 def login(
     form_data: OAuth2PasswordRequestForm = Depends(),
     db: Session = Depends(get_db)
@@ -65,7 +65,8 @@ def login(
     if not db_user or not verify_password(form_data.password, db_user.password):
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Invalid username or password"
+            detail="Invalid username or password",
+            headers={"WWW-Authenticate": "Bearer"}
         )
 
     access_token = create_access_token({"sub": str(db_user.id)})

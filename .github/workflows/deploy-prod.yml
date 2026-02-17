@@ -1,0 +1,165 @@
+name: Deploy to Production
+
+on:
+    push:
+        branches:
+            - main
+    workflow_dispatch:
+        inputs:
+            image_tag:
+                description: "Docker image tag to deploy (leave empty for latest)"
+                required: false
+                type: string
+
+permissions:
+    contents: read
+    deployments: write
+    pull-requests: write
+    id-token: write
+
+env:
+    AWS_REGION: us-east-1
+
+jobs:
+    pre-release-checks:
+        name: Pre-Release Checks
+        runs-on: ubuntu-latest
+        steps:
+            - name: Check out code
+              uses: actions/checkout@v4
+
+            - name: Verify this is a release commit
+              run: |
+                  # Check if commit message contains release indicator
+                  COMMIT_MSG=$(git log -1 --pretty=%B)
+                  if [[ $COMMIT_MSG =~ ^v[0-9]+\.[0-9]+\.[0-9]+ ]] || [[ $COMMIT_MSG == *"release"* ]]; then
+                    echo "✓ Valid release commit detected"
+                  else
+                    echo "⚠️ This may not be a release commit. Please verify."
+                    echo "Commit message: $COMMIT_MSG"
+                  fi
+
+            - name: Wait for CI to complete
+              uses: tomchv/wait-my-workflow@v1.1.0
+              with:
+                  token: ${{ secrets.GITHUB_TOKEN }}
+                  checkName: "CI / Backend Tests"
+                  ref: ${{ github.ref }}
+                  timeoutSeconds: 600
+
+    terraform-plan:
+        name: Plan Terraform Changes
+        needs: [pre-release-checks]
+        uses: ./.github/workflows/terraform-plan.yml
+        secrets: inherit
+
+    approve-terraform:
+        name: Approve Terraform Apply
+        needs: [terraform-plan]
+        runs-on: ubuntu-latest
+        environment:
+            name: prod-approval
+        steps:
+            - name: Approve for production
+              run: |
+                  echo "✓ Terraform changes approved for production"
+                  echo "Approved by: ${{ github.actor }}"
+
+    terraform-apply:
+        name: Apply Terraform Changes
+        needs: [approve-terraform]
+        uses: ./.github/workflows/terraform-apply.yml
+        with:
+            environment: prod
+        secrets: inherit
+
+    approve-deployment:
+        name: Approve Fargate Deployment
+        needs: [terraform-apply]
+        runs-on: ubuntu-latest
+        environment:
+            name: prod-deployment
+        steps:
+            - name: Approve for production deployment
+              run: |
+                  echo "✓ Deployment approved for production"
+                  echo "Approved by: ${{ github.actor }}"
+
+    deploy-fargate:
+        name: Deploy to Fargate
+        needs: [approve-deployment]
+        uses: ./.github/workflows/deploy-fargate.yml
+        with:
+            environment: prod
+            image_tag: ${{ github.event.inputs.image_tag || github.sha }}
+        secrets: inherit
+
+    post-deployment-validation:
+        name: Post-Deployment Validation
+        runs-on: ubuntu-latest
+        needs: [deploy-fargate]
+        if: success()
+        steps:
+            - name: Configure AWS credentials
+              uses: aws-actions/configure-aws-credentials@v4
+              with:
+                  role-to-assume: ${{ secrets.AWS_ROLE_TO_ASSUME }}
+                  aws-region: ${{ env.AWS_REGION }}
+
+            - name: Run extended health checks
+              run: |
+                  CLUSTER="mypythonproject1-cluster-prod"
+                  SERVICES=("backend-service-prod" "frontend-service-prod")
+
+                  for service in "${SERVICES[@]}"; do
+                    echo "Validating $service..."
+                    
+                    # Check service health
+                    STATUS=$(aws ecs describe-services --cluster "$CLUSTER" --services "$service" --query 'services[0].status' --output text)
+                    RUNNING=$(aws ecs describe-services --cluster "$CLUSTER" --services "$service" --query 'services[0].runningCount' --output text)
+                    DESIRED=$(aws ecs describe-services --cluster "$CLUSTER" --services "$service" --query 'services[0].desiredCount' --output text)
+                    
+                    echo "  Status: $STATUS"
+                    echo "  Running: $RUNNING / Desired: $DESIRED"
+                    
+                    if [[ "$STATUS" != "ACTIVE" ]] || [[ "$RUNNING" != "$DESIRED" ]]; then
+                      echo "✗ Service $service is not healthy"
+                      exit 1
+                    fi
+                  done
+
+                  echo "✓ All services are healthy"
+
+            - name: Create GitHub release
+              uses: actions/github-script@v6
+              with:
+                  script: |
+                      const fs = require('fs');
+                      const tag = '${{ github.ref }}' === 'refs/heads/main' ? 'latest' : '${{ github.event.inputs.image_tag || github.sha }}';
+
+                      github.rest.repos.createRelease({
+                        owner: context.repo.owner,
+                        repo: context.repo.repo,
+                        tag_name: tag,
+                        name: `Release ${tag}`,
+                        body: `Deployed to production on ${new Date().toISOString()}`,
+                        draft: false,
+                        prerelease: false
+                      });
+
+    notify-deployment:
+        name: Notify Deployment
+        runs-on: ubuntu-latest
+        if: always()
+        needs: [deploy-fargate, post-deployment-validation]
+        steps:
+            - name: Create deployment summary
+              run: |
+                  if [[ "${{ needs.deploy-fargate.result }}" == "success" ]]; then
+                    echo "## ✅ Production Deployment Successful" >> $GITHUB_STEP_SUMMARY
+                  else
+                    echo "## ❌ Production Deployment Failed" >> $GITHUB_STEP_SUMMARY
+                  fi
+                  echo "- **Commit**: ${{ github.sha }}" >> $GITHUB_STEP_SUMMARY
+                  echo "- **Deployed by**: ${{ github.actor }}" >> $GITHUB_STEP_SUMMARY
+                  echo "- **Deployment time**: $(date -u +'%Y-%m-%d %H:%M:%S UTC')" >> $GITHUB_STEP_SUMMARY

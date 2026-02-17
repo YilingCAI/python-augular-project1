@@ -10,6 +10,7 @@ class Settings(BaseSettings):
     JWT_SECRET_KEY: str = Field(..., env="JWT_SECRET_KEY")
     JWT_ALGORITHM: str = Field("HS256", env="JWT_ALGORITHM")
     JWT_EXPIRE_MINUTES: int = Field(60, env="JWT_EXPIRE_MINUTES")
+    ALLOWED_ORIGINS: str = Field("http://localhost:3000", env="ALLOWED_ORIGINS")
     DEBUG: bool = Field(False, env="DEBUG")
 
     @property

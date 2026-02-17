@@ -1,0 +1,96 @@
+<div class="homepage-container">
+    <header class="homepage-header">
+        <div class="header-content">
+            <h1 class="header-title">🎮 Tic Tac Toe</h1>
+            <p class="header-subtitle">Challenge your skills online</p>
+        </div>
+
+        <div *ngIf="user" class="user-section">
+            <div class="user-card">
+                <div class="user-avatar">
+                    {{ user.username.charAt(0).toUpperCase() }}
+                </div>
+                <div class="user-details">
+                    <p class="user-name">{{ user.username }}</p>
+                    <div class="user-stats">
+                        <span class="stat-item">
+                            <span class="stat-label">Wins</span>
+                            <span class="stat-value">{{ user.wins }}</span>
+                        </span>
+                    </div>
+                </div>
+                <button type="button" (click)="onLogout()" class="btn btn-logout" aria-label="Logout from account">
+                    🚪 Logout
+                </button>
+            </div>
+        </div>
+    </header>
+
+    <main class="homepage-main">
+        <section class="game-actions-section">
+            <h2>Choose an Action</h2>
+            <div class="game-actions">
+                <button type="button" class="action-card create-game-btn" (click)="goToCreateGame()"
+                    aria-label="Create a new game">
+                    <div class="card-icon">➕</div>
+                    <div class="card-content">
+                        <h3>Create Game</h3>
+                        <p>Start a new game and wait for an opponent</p>
+                    </div>
+                </button>
+
+                <button type="button" class="action-card join-game-btn" (click)="goToJoinGame()"
+                    aria-label="Join an existing game">
+                    <div class="card-icon">🔗</div>
+                    <div class="card-content">
+                        <h3>Join Game</h3>
+                        <p>Join a game by entering its ID</p>
+                    </div>
+                </button>
+            </div>
+        </section>
+
+        <section class="game-info">
+            <h2>How to Play</h2>
+            <div class="info-grid">
+                <div class="info-card">
+                    <div class="info-number">1</div>
+                    <h4>Create or Join</h4>
+                    <p>Create a new game or join an existing one with a game ID</p>
+                </div>
+
+                <div class="info-card">
+                    <div class="info-number">2</div>
+                    <h4>Take Turns</h4>
+                    <p>Take turns marking X or O on the board</p>
+                </div>
+
+                <div class="info-card">
+                    <div class="info-number">3</div>
+                    <h4>Win</h4>
+                    <p>Get three in a row horizontally, vertically, or diagonally</p>
+                </div>
+
+                <div class="info-card">
+                    <div class="info-number">4</div>
+                    <h4>Compete</h4>
+                    <p>Build your win streak and climb the leaderboard</p>
+                </div>
+            </div>
+        </section>
+
+        <section class="quick-tips">
+            <h3>💡 Quick Tips</h3>
+            <ul>
+                <li>Control the center for better chances of winning</li>
+                <li>Look ahead and block your opponent's winning moves</li>
+                <li>Play strategically to secure corners early</li>
+                <li>Share your game ID with friends to play together</li>
+            </ul>
+        </section>
+    </main>
+
+    <footer class="homepage-footer">
+        <p>&copy; 2026 Tic Tac Toe Game. Play responsibly.</p>
+    </footer>
+</div>

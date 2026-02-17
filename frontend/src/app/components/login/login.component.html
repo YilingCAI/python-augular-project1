@@ -1,0 +1,85 @@
+<div class="login-container">
+    <form (ngSubmit)="onSubmit()" class="login-form" #loginForm="ngForm" [attr.novalidate]="true">
+        <div class="form-header">
+            <h2>Login</h2>
+            <p class="form-subtitle">Access your tic tac toe account</p>
+        </div>
+
+        <!-- Error Message Section -->
+        <div *ngIf="displayError" class="error-message" role="alert" aria-live="polite">
+            <span class="error-icon">⚠</span>
+            <div class="error-content">
+                <strong>Login Error</strong>
+                <p>{{ displayError }}</p>
+            </div>
+        </div>
+
+        <!-- Rate Limit Warning -->
+        <div *ngIf="showRateLimitWarning" class="warning-message" role="alert" aria-live="polite">
+            <span class="warning-icon">⏱</span>
+            <div class="warning-content">
+                <strong>Too Many Attempts</strong>
+                <p>{{ rateLimitMessage }}</p>
+            </div>
+        </div>
+
+        <!-- Username Field -->
+        <div class="form-group">
+            <label for="username">
+                <span class="label-text">Username</span>
+                <span class="required-indicator" aria-label="required">*</span>
+            </label>
+            <input id="username" type="text" [(ngModel)]="username" (blur)="onUsernameBlur()" name="username"
+                class="form-input" [disabled]="loading || rateLimited" required autocomplete="username"
+                [attr.aria-describedby]="usernameError ? 'username-error' : null" [class.input-error]="usernameError"
+                maxlength="20" spellcheck="false" />
+            <span *ngIf="usernameError" id="username-error" class="field-error">
+                {{ usernameError }}
+            </span>
+        </div>
+
+        <!-- Password Field -->
+        <div class="form-group">
+            <label for="password">
+                <span class="label-text">Password</span>
+                <span class="required-indicator" aria-label="required">*</span>
+            </label>
+            <div class="password-input-wrapper">
+                <input id="password" [type]="showPassword ? 'text' : 'password'" [(ngModel)]="password"
+                    (blur)="onPasswordBlur()" name="password" class="form-input" [disabled]="loading || rateLimited"
+                    required autocomplete="current-password"
+                    [attr.aria-describedby]="passwordError ? 'password-error' : null"
+                    [class.input-error]="passwordError" maxlength="255" />
+                <button type="button" class="password-toggle"
+                    [attr.aria-label]="showPassword ? 'Hide password' : 'Show password'"
+                    (click)="togglePasswordVisibility()" [disabled]="loading || rateLimited">
+                    {{ showPassword ? '🙈' : '👁' }}
+                </button>
+            </div>
+            <span *ngIf="passwordError" id="password-error" class="field-error">
+                {{ passwordError }}
+            </span>
+        </div>
+
+        <!-- Form Actions -->
+        <div class="button-group">
+            <button type="submit" class="btn btn-login" [disabled]="loading || !loginForm.valid || rateLimited"
+                [attr.aria-busy]="loading">
+                <span *ngIf="!loading">Login</span>
+                <span *ngIf="loading" class="spinner"></span>
+                <span *ngIf="loading">Logging in...</span>
+            </button>
+            <button type="button" class="btn btn-signup" (click)="goToSignup()" [disabled]="loading || rateLimited">
+                Sign up
+            </button>
+        </div>
+
+        <!-- Security Info -->
+        <div class="security-info">
+            <p class="text-small text-muted">
+                🔒 Your login information is encrypted and secure.
+                <a href="/privacy" target="_blank" rel="noopener noreferrer">Privacy Policy</a>
+            </p>
+        </div>
+    </form>
+</div>
