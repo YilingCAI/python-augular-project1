@@ -141,6 +141,14 @@ terraform.tfvars
 .tfvars
 
 # ============================================================================
+# GITHUB ACTIONS
+# ============================================================================
+# Config files should be managed by Terraform and GitHub Secrets, not hardcoded
+.github/workflows/config.json
+.github/workflows/*.local
+.github/workflows/secrets/
+
+# ============================================================================
 # TEMPORARY & ARTIFACTS
 # ============================================================================
 *.tmp
@@ -162,3 +170,5 @@ temp/
 .env.test
 poetry.lock.local
 package-lock.json.local
+
+mypythonproject1.code-workspace
