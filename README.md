@@ -1,286 +1,308 @@
-# Tic Tac Toe Game - Full Stack Application
+# MyPythonProject1 - Full-Stack DevOps Platform
 
-A complete full-stack Tic Tac Toe game application with a Python FastAPI backend and Angular frontend.
+A production-ready full-stack application with unified DevOps infrastructure, comprehensive testing, and enterprise-grade deployment pipelines.
 
-## Project Overview
+## 📋 Project Overview
 
-This is a web-based Tic Tac Toe game with the following features:
-- User authentication (registration & login)
-- Create new games
-- Join existing games by game ID
-- Real-time game board interactions
-- Win/loss tracking
-- Responsive design
+This monorepo contains:
+- **Backend**: Python FastAPI microservices with PostgreSQL
+- **Frontend**: Angular SPA with TypeScript
+- **Infrastructure**: AWS (ECS, Fargate, ALB, RDS) via Terraform
+- **CI/CD**: GitHub Actions with environment-based deployments
+- **DevOps**: Unified Makefile CLI for local and CI/CD workflows
 
-## Architecture
+## 🚀 Quick Start
 
-### Tech Stack
-
-**Backend:**
-- Python 3.10+
-- FastAPI (modern async web framework)
-- PostgreSQL (database)
-- SQLAlchemy (ORM)
-- Alembic (database migrations)
-- JWT authentication
-- Pytest (testing)
-
-**Frontend:**
-- Angular 19 (latest)
-- TypeScript 5.6
-- RxJS (reactive programming)
-- Angular Router (routing)
-- Tailwind CSS 4 (styling)
-- Standalone components
-
-**Infrastructure:**
-- Docker & Docker Compose
-- Terraform (IaC)
-- AWS (deployment target)
-
-## Project Structure
-
-```
-.
-├── backend/                    # FastAPI application
-│   ├── app/
-│   │   ├── api/               # API endpoints
-│   │   ├── core/              # Core utilities
-│   │   ├── db/                # Database configuration
-│   │   ├── models/            # SQLAlchemy models
-│   │   ├── schemas/           # Pydantic schemas
-│   │   ├── services/          # Business logic
-│   │   └── main.py            # FastAPI app
-│   ├── tests/                 # Unit tests
-│   ├── alembic/               # Database migrations
-│   └── requirements.txt
-├── frontend/                   # Angular application (MIGRATED FROM REACT)
-│   ├── src/
-│   │   ├── app/
-│   │   │   ├── components/    # Angular components
-│   │   │   ├── services/      # Services (API, Auth, Game)
-│   │   │   ├── core/          # Guards, interceptors
-│   │   │   └── types/         # TypeScript interfaces
-│   │   ├── environments/      # Environment config
-│   │   ├── styles.css         # Global styles
-│   │   └── main.ts            # Bootstrap
-│   ├── package.json
-│   └── angular.json
-├── deploy/                     # Docker compose
-├── infra/                      # Terraform configuration
-└── scripts/                    # Utility scripts
-```
-
-## Getting Started
-
-### Prerequisites
-
-- **macOS**: Install Homebrew, Node.js 18+, Python 3.10+, PostgreSQL 16+, Docker
-- **Linux**: Use package manager for Node.js, Python, PostgreSQL, Docker
-- **Windows**: Use WSL2 with above tools
-
-### Quick Start with Docker
-
-The easiest way to run the entire application:
-
+### Local Development
 ```bash
-cd deploy
-docker-compose up -d
-```
-
-Services will be available at:
-- Frontend: http://localhost:4200
-- Backend API: http://localhost:8000
-- Database: localhost:5432
-
-### Manual Setup
-
-#### Backend Setup
-
-```bash
-cd backend
-
-# Create virtual environment
-python -m venv venv
-source venv/bin/activate  # On Windows: venv\Scripts\activate
-
 # Install dependencies
-pip install -r requirements.txt
+make install
 
-# Set up database
-alembic upgrade head
-
-# Run server
-uvicorn app.main:app --reload --port 8000
-```
-
-Backend will be available at `http://localhost:8000`
-
-#### Frontend Setup
-
-```bash
-cd frontend
-
-# Install dependencies
-npm install
-
-# Start development server
-npm start
-```
-
-Frontend will be available at `http://localhost:4200`
-
-## Development Workflow
-
-### Backend Development
-
-```bash
-cd backend
-
-# Activate virtual environment
-source venv/bin/activate
-
-# Run development server with auto-reload
-make dev  # or: uvicorn app.main:app --reload
+# Run locally (backend + frontend)
+make dev
 
 # Run tests
 make test
 
-# Run linting
+# Lint and format code
 make lint
+make format
 ```
 
-### Frontend Development
+### Infrastructure (Terraform)
+```bash
+# Validate infrastructure
+make tf-validate ENV=staging
+
+# Plan changes (review first!)
+make tf-plan ENV=staging
+
+# Apply changes
+make tf-apply ENV=staging
+```
+
+### Deployment
+```bash
+# Build and push Docker images
+make docker-build ENV=staging IMAGE_TAG=v1.0.0
+
+# Full deployment (terraform + docker + ECS)
+make deploy ENV=staging IMAGE_TAG=v1.0.0
+```
+
+## 📁 Folder Structure
+
+```
+├── README.md                    # This file - project overview
+├── Makefile                     # Unified CLI for all operations
+├── LICENSE                      # Project license
+│
+├── backend/                     # FastAPI microservices
+│   ├── README.md               # Backend setup & API documentation
+│   ├── main.py                 # Application entry point
+│   ├── app/                    # Application code
+│   ├── tests/                  # Backend unit tests
+│   ├── alembic/                # Database migrations
+│   └── pyproject.toml          # Python dependencies
+│
+├── frontend/                    # Angular SPA
+│   ├── README.md               # Frontend setup & guidelines
+│   ├── src/                    # Angular source code
+│   ├── package.json            # Node dependencies
+│   ├── tsconfig.json           # TypeScript configuration
+│   └── angular.json            # Angular CLI configuration
+│
+
+## 🔐 Security & Secrets Management
+
+### Principle: **Secrets in Code = Never**
+
+**For CI/CD:**
+- GitHub Secrets stored in repository settings (AWS_ROLE_TO_ASSUME, DB passwords, etc.)
+- Used via `${{ secrets.SECRET_NAME }}` in workflows
+- OIDC token for AWS authentication (no hardcoded credentials)
+
+**For Runtime:**
+- AWS Secrets Manager for sensitive data
+- ECS task definitions inject secrets as environment variables
+- Application reads from environment at runtime
+- Terraform manages secrets creation in AWS
+
+**For Local Development:**
+- Copy `config/.env.example` to `.env.local`
+- Fill in local values (never commit `.env.local`)
+- Used by scripts via `source .env.local`
+
+See [docs/SECRETS_MANAGEMENT.md](docs/SECRETS_MANAGEMENT.md) for detailed patterns.
+
+## 🧪 Testing Strategy
+
+### Backend
+```bash
+# Unit tests
+cd backend && pytest
+
+# With coverage
+pytest --cov=app --cov-report=html
+```
+
+### Frontend
+```bash
+# Unit and integration tests
+cd frontend && npm test
+
+# E2E tests
+npm run e2e
+```
+
+### Infrastructure
+```bash
+# Terraform validation (runs in CI/CD)
+terraform validate
+
+# Static analysis with Checkov
+checkov -d infra/
+
+# Plan review before apply
+make tf-plan ENV=staging
+```
+
+## 🚀 Deployment Environments
+
+| Environment | Access | Approval | Changes |
+|-------------|--------|----------|---------|
+| **dev** | Developers | None | Immediate |
+| **staging** | DevOps Team | Optional | Before prod testing |
+| **prod** | DevOps Lead | Required | Manual approval |
+
+### Deploying to Each Environment
 
 ```bash
-cd frontend
+# Staging - no approval needed
+make deploy ENV=staging IMAGE_TAG=sha-abc123
 
-# Start development server
-npm start
-
-# Run tests
-npm test
-
-# Run linting
-npm run lint
-npm run lint:fix
+# Production - requires manual approval in GitHub Actions
+make deploy-prod IMAGE_TAG=v1.2.3
 ```
 
-## API Documentation
+## 📊 Architecture Overview
 
-Once the backend is running, visit `http://localhost:8000/docs` for interactive API documentation (Swagger UI).
+```
+┌─────────────────────────────────────────────────────────────┐
+│                    GitHub Repository                        │
+│  ┌─────────────────────────────────────────────────────┐    │
+│  │  Code: backend/, frontend/, infra/, scripts/, docs/ │    │
+│  └─────────────────────────────────────────────────────┘    │
+└──────────────────┬──────────────────────────────────────────┘
+                   │
+        ┌──────────┴──────────┐
+        │                     │
+   ┌────▼─────┐       ┌──────▼────┐
+   │ GitHub   │       │ Branch    │
+   │ Actions  │       │ Push      │
+   │ Triggered│       │ Triggered │
+   └────┬─────┘       └──────┬────┘
+        │                     │
+        └──────────┬──────────┘
+                   │
+        ┌──────────▼──────────┐
+        │  GitHub Actions     │
+        │  Workflow           │
+        ├─────────────────────┤
+        │ 1. Validate inputs  │
+        │ 2. Terraform plan   │
+        │ 3. Approval gate    │
+        │ 4. Terraform apply  │
+        │ 5. Docker build     │
+        │ 6. ECS deploy       │
+        └──────────┬──────────┘
+                   │
+        ┌──────────▼──────────┐
+        │  AWS Services       │
+        ├─────────────────────┤
+        │ • S3 (state)        │
+        │ • DynamoDB (locks)  │
+        │ • ECR (images)      │
+        │ • ECS (containers)  │
+        │ • RDS (database)    │
+        │ • ALB (load balancer)
+        │ • Secrets Manager   │
+        └─────────────────────┘
+```
 
-### Key Endpoints
+## 🛠️ Common Tasks
 
-**Authentication:**
-- `POST /users/register` - Register new user
-- `POST /users/login` - User login (returns JWT token)
-- `GET /users/me` - Get current user profile
+### Adding a New Feature
+1. Create feature branch: `git checkout -b feature/my-feature`
+2. Develop and test locally: `make dev`
+3. Run tests: `make test`
+4. Format code: `make format`
+5. Push and open PR
+6. Once merged to develop → automatic staging deployment
 
-**Games:**
-- `POST /games/create_game` - Create new game
-- `POST /games/{game_id}/join` - Join existing game
-- `POST /games/move` - Make a move
-- `GET /games` - Get user's games
-- `GET /games/{game_id}` - Get specific game
+### Deploying to Production
+1. Ensure all tests pass
+2. Merge to main branch
+3. Create release tag: `git tag -a v1.2.3`
+4. GitHub Actions deploys to prod with approval
+5. Verify in AWS console
 
-## Database
-
-### Migrations
-
-Create new migration:
+### Rolling Back
 ```bash
-cd backend
-alembic revision --autogenerate -m "description"
+# List previous images
+aws ecr describe-images --repository-name myapp-backend
+
+# Deploy previous version
+make deploy ENV=prod IMAGE_TAG=v1.2.2
 ```
 
-Run migrations:
+### Debugging Terraform
 ```bash
-alembic upgrade head
+# See what changed
+make tf-plan ENV=staging
+
+# Check current state
+cd infra && terraform show
+
+# Destroy specific resource (dangerous!)
+cd infra && terraform destroy -target='aws_ecs_service.backend'
 ```
 
-## Testing
+## 📖 Documentation
 
-### Backend Tests
+- **[docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)** - System design and component overview
+- **[docs/ONBOARDING.md](docs/ONBOARDING.md)** - Setup guide for new team members
+- **[docs/SECRETS_MANAGEMENT.md](docs/SECRETS_MANAGEMENT.md)** - How secrets are secured
+- **[docs/DEPLOYMENT_GUIDE.md](docs/DEPLOYMENT_GUIDE.md)** - Detailed deployment procedures
+- **[docs/TROUBLESHOOTING.md](docs/TROUBLESHOOTING.md)** - Common issues and fixes
+- **[docs/MAKE_REFERENCE.md](docs/MAKE_REFERENCE.md)** - All Makefile targets explained
+- **[backend/README.md](backend/README.md)** - Backend setup and API docs
+- **[frontend/README.md](frontend/README.md)** - Frontend setup and guidelines
+- **[infra/README.md](infra/README.md)** - Infrastructure and Terraform docs
+
+## 🤝 Contributing
+
+1. Fork or branch from `develop`
+2. Create feature branch: `git checkout -b feature/my-feature`
+3. Make changes and test: `make test`
+4. Format code: `make format`
+5. Commit with clear message
+6. Push and create Pull Request
+7. Ensure CI passes and get review approval
+8. Merge to develop (staging auto-deploys)
+
+## 📝 Makefile Quick Reference
+
 ```bash
-cd backend
-pytest
-pytest -v  # Verbose
-pytest --cov  # With coverage
+# Development
+make help                  # Show all targets
+make install              # Install dependencies
+make dev                  # Run locally
+make test                 # Run all tests
+make lint                 # Lint code
+make format               # Format code
+
+# Infrastructure
+make tf-validate ENV=staging
+make tf-plan ENV=staging
+make tf-apply ENV=staging
+make tf-destroy ENV=staging  # ⚠️ Dangerous!
+
+# Deployment
+make docker-build ENV=staging IMAGE_TAG=v1.0.0
+make ecs-deploy ENV=staging IMAGE_TAG=v1.0.0
+make deploy ENV=staging IMAGE_TAG=v1.0.0
+
+# Cleanup
+make clean                # Remove build artifacts
+make clean-env            # Remove .env files
 ```
 
-### Frontend Tests
-```bash
-cd frontend
-npm test
-npm test -- --code-coverage
-```
+See [docs/MAKE_REFERENCE.md](docs/MAKE_REFERENCE.md) for complete reference.
 
-## Deployment
+## 🔗 External Resources
 
-### Docker Build
+- [AWS Documentation](https://docs.aws.amazon.com/)
+- [Terraform Documentation](https://www.terraform.io/docs/)
+- [FastAPI Documentation](https://fastapi.tiangolo.com/)
+- [Angular Documentation](https://angular.io/docs/)
+- [GitHub Actions Documentation](https://docs.github.com/en/actions/)
 
-```bash
-# Build specific services
-docker-compose build frontend
-docker-compose build backend
+## 📞 Support
 
-# Or build all
-docker-compose build
-```
+- **Issues**: Create GitHub issue with details
+- **Questions**: Check [docs/TROUBLESHOOTING.md](docs/TROUBLESHOOTING.md)
+- **Security**: See [SECURITY.md](SECURITY.md) for reporting vulnerabilities
 
-### AWS Deployment
+## 📄 License
 
-See [TERRAFORM_INFRASTRUCTURE.md](./TERRAFORM_INFRASTRUCTURE.md) for Infrastructure as Code deployment.
+See [LICENSE](LICENSE) file for details.
 
-## Configuration
+---
 
-### Environment Variables
-
-**Backend (.env):**
-```
-DATABASE_URL=postgresql://user:password@localhost/dbname
-SECRET_KEY=your-secret-key-here
-```
-
-**Frontend (.env.local):**
-```
-NEXT_PUBLIC_API_BASE_URL=http://localhost:8000
-```
-
-## Frontend Migration from React to Angular ⭐
-
-The frontend was refactored from React/Next.js to **Angular 19** with the following improvements:
-- **Type Safety**: Stronger TypeScript implementation with strict mode
-- **State Management**: RxJS observables with services and BehaviorSubjects
-- **Dependency Injection**: Built-in Angular DI system for better code organization
-- **Performance**: Ahead-of-time compilation and standalone components
-- **Testing**: Integrated Jasmine/Karma testing framework
-- **Architecture**: Clear separation of concerns with services, components, and interceptors
-
-### What's New in the Angular Frontend:
-- ✅ All 6 React components migrated to Angular standalone components
-- ✅ API services with centralized HTTP client
-- ✅ Authentication service with token management
-- ✅ HTTP interceptors for auto-token injection and global error handling
-- ✅ Route guards for protected pages
-- ✅ Reactive forms with validation
-- ✅ RxJS observables for state management
-- ✅ Same styling and UX maintained
-- ✅ Docker support for containerization
-
-See [frontend/ANGULAR_MIGRATION.md](./frontend/ANGULAR_MIGRATION.md) for detailed migration information.
-
-## Documentation
-
-- [Backend Refactoring Guide](./BACKEND_REFACTORING.md)
-- [Frontend Refactoring Guide](./FRONTEND_REFACTORING.md)
-- [Infrastructure as Code (Terraform)](./TERRAFORM_INFRASTRUCTURE.md)
-- [CI/CD Workflows](./CI_CD_WORKFLOWS.md)
-- [Commands Reference](./COMMANDS_REFERENCE.md)
-- [Quick Start Guide](./QUICK_START.md)
-- [Implementation Summary](./IMPLEMENTATION_SUMMARY.md)
-- [Angular Migration Details](./frontend/ANGULAR_MIGRATION.md) ⭐ **NEW**
+**Last Updated**: February 2026  
+**Maintained By**: DevOps Team  
+**Version**: 2.0 (Complete DevOps Refactoring)
 
 ## Troubleshooting
 

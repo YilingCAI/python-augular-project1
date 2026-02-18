@@ -41,7 +41,7 @@ permissions:
 
 env:
     AWS_REGION: us-east-1
-    TF_VERSION: 1.5.0
+    PROJECT_ROOT: .
 
 jobs:
     validate:
@@ -57,18 +57,21 @@ jobs:
               run: |
                   echo "Validating deployment inputs..."
 
-                  # Validate environment
                   if [[ ! "${{ inputs.environment }}" =~ ^(dev|staging|prod)$ ]]; then
-                    echo "Error: Invalid environment. Must be dev, staging, or prod"
+                    echo "❌ Error: Invalid environment. Must be dev, staging, or prod"
                     exit 1
                   fi
 
-                  echo "✓ Environment: ${{ inputs.environment }}"
-                  echo "✓ Image tag: ${{ inputs.image-tag }}"
+                  if [ -z "${{ inputs.image-tag }}" ]; then
+                    echo "❌ Error: image-tag is required"
+                    exit 1
+                  fi
+
+                  echo "✅ Validation passed"
                   echo "proceed=true" >> $GITHUB_OUTPUT
 
     approval:
-        name: Approval Gate
+        name: Approval Gate - ${{ inputs.environment }}
         runs-on: ubuntu-latest
         if: inputs.require-approval
         environment:
@@ -76,10 +79,10 @@ jobs:
         needs: [validate]
         steps:
             - name: Waiting for approval
-              run: echo "✓ Deployment approved by ${{ github.actor }}"
+              run: echo "✅ Deployment approved by ${{ github.actor }}"
 
-    terraform:
-        name: Terraform - ${{ inputs.environment }}
+    terraform-plan:
+        name: Terraform Plan - ${{ inputs.environment }}
         runs-on: ubuntu-latest
         if: inputs.run-terraform && needs.validate.outputs.proceed == 'true'
         needs: [validate, approval]
@@ -88,143 +91,171 @@ jobs:
         steps:
             - uses: actions/checkout@v4
 
-            - name: AWS Authentication
-              uses: ./.github/actions/aws-auth
+            - name: Configure AWS credentials
+              uses: aws-actions/configure-aws-credentials@v4
               with:
-                  role-arn: ${{ secrets.AWS_ROLE_TO_ASSUME }}
+                  role-to-assume: ${{ secrets.AWS_ROLE_TO_ASSUME }}
                   aws-region: ${{ env.AWS_REGION }}
 
-            - name: Terraform Validate
-              uses: ./.github/actions/terraform/validate
+            - name: Setup Terraform
+              uses: hashicorp/setup-terraform@v2
               with:
-                  working-directory: ./infra
-                  terraform-version: ${{ env.TF_VERSION }}
+                  terraform_version: 1.5.0
 
             - name: Terraform Plan
-              uses: ./.github/actions/terraform/plan
-              with:
-                  working-directory: ./infra
-                  environment: ${{ inputs.environment }}
-                  aws-region: ${{ env.AWS_REGION }}
-                  state-bucket: ${{ secrets.TERRAFORM_STATE_BUCKET }}
-                  state-lock-table: ${{ secrets.TERRAFORM_LOCK_TABLE }}
+              env:
+                  ENV: ${{ inputs.environment }}
+                  TERRAFORM_STATE_BUCKET: ${{ secrets.TERRAFORM_STATE_BUCKET }}
+                  TERRAFORM_LOCK_TABLE: ${{ secrets.TERRAFORM_LOCK_TABLE }}
+              run: |
+                  make tf-plan
 
-            - name: Terraform Apply
-              if: ${{ inputs.run-terraform }}
-              uses: ./.github/actions/terraform/apply
+            - name: Upload plan artifact
+              uses: actions/upload-artifact@v3
               with:
-                  working-directory: ./infra
-                  environment: ${{ inputs.environment }}
-                  aws-region: ${{ env.AWS_REGION }}
-                  state-bucket: ${{ secrets.TERRAFORM_STATE_BUCKET }}
-                  state-lock-table: ${{ secrets.TERRAFORM_LOCK_TABLE }}
-                  plan-artifact-path: ./infra/tfplan.${{ inputs.environment }}
+                  name: tfplan-${{ inputs.environment }}
+                  path: /tmp/tf-plans/tfplan.${{ inputs.environment }}
+                  retention-days: 1
 
-    deploy:
-        name: ECS Deployment - ${{ inputs.environment }}
+    terraform-apply:
+        name: Terraform Apply - ${{ inputs.environment }}
         runs-on: ubuntu-latest
-        if: |
-            !inputs.terraform-only && 
-            needs.validate.outputs.proceed == 'true'
-        needs: [validate, approval, terraform]
+        if: inputs.run-terraform && needs.validate.outputs.proceed == 'true'
+        needs: [validate, approval, terraform-plan]
         environment:
             name: ${{ inputs.environment }}
         steps:
             - uses: actions/checkout@v4
 
-            - name: AWS Authentication
-              uses: ./.github/actions/aws-auth
+            - name: Configure AWS credentials
+              uses: aws-actions/configure-aws-credentials@v4
               with:
-                  role-arn: ${{ secrets.AWS_ROLE_TO_ASSUME }}
+                  role-to-assume: ${{ secrets.AWS_ROLE_TO_ASSUME }}
                   aws-region: ${{ env.AWS_REGION }}
 
-            - name: Get ECR Registry
-              id: ecr
-              run: |
-                  REGISTRY=$(aws ecr describe-repositories \
-                    --repository-names mypythonproject1/backend \
-                    --query 'repositories[0].repositoryUri' \
-                    --output text | cut -d'/' -f1)
-                  echo "registry=$REGISTRY" >> $GITHUB_OUTPUT
-
-            - name: Deploy Backend
-              uses: ./.github/actions/ecs/deploy
+            - name: Setup Terraform
+              uses: hashicorp/setup-terraform@v2
               with:
-                  cluster: mypythonproject1-cluster-${{ inputs.environment }}
-                  service: backend-service-${{ inputs.environment }}
-                  task-definition: ./infra/modules/ecs/task-definition-backend.json
-                  container-name: backend
-                  image: ${{ steps.ecr.outputs.registry }}/mypythonproject1/backend:${{ inputs.image-tag }}
-                  wait-for-stability: "true"
-                  timeout-seconds: "600"
-                  enable-smoke-tests: "true"
+                  terraform_version: 1.5.0
 
-            - name: Deploy Frontend
-              uses: ./.github/actions/ecs/deploy
+            - name: Download plan artifact
+              uses: actions/download-artifact@v3
               with:
-                  cluster: mypythonproject1-cluster-${{ inputs.environment }}
-                  service: frontend-service-${{ inputs.environment }}
-                  task-definition: ./infra/modules/ecs/task-definition-frontend.json
-                  container-name: frontend
-                  image: ${{ steps.ecr.outputs.registry }}/mypythonproject1/frontend:${{ inputs.image-tag }}
-                  wait-for-stability: "true"
-                  timeout-seconds: "600"
-                  enable-smoke-tests: "true"
+                  name: tfplan-${{ inputs.environment }}
+                  path: /tmp/tf-plans/
 
-            - name: Post-Deployment Report
-              if: success()
+            - name: Terraform Apply
+              env:
+                  ENV: ${{ inputs.environment }}
+                  TERRAFORM_STATE_BUCKET: ${{ secrets.TERRAFORM_STATE_BUCKET }}
+                  TERRAFORM_LOCK_TABLE: ${{ secrets.TERRAFORM_LOCK_TABLE }}
               run: |
-                  echo "## ✅ Deployment Successful" >> $GITHUB_STEP_SUMMARY
-                  echo "- **Environment**: ${{ inputs.environment }}" >> $GITHUB_STEP_SUMMARY
-                  echo "- **Image Tag**: ${{ inputs.image-tag }}" >> $GITHUB_STEP_SUMMARY
-                  echo "- **Deployed by**: ${{ github.actor }}" >> $GITHUB_STEP_SUMMARY
-                  echo "- **Timestamp**: $(date -u +'%Y-%m-%d %H:%M:%S UTC')" >> $GITHUB_STEP_SUMMARY
+                  chmod +x scripts/terraform-apply.sh
+                  make tf-apply
 
-    rollback:
-        name: Rollback
+    docker-build:
+        name: Docker Build - ${{ inputs.environment }}
         runs-on: ubuntu-latest
-        if: failure() && !inputs.terraform-only
-        needs: [deploy]
+        if: needs.validate.outputs.proceed == 'true' && !inputs.terraform-only
+        needs: [validate]
+        permissions:
+            contents: read
+            packages: write
+        steps:
+            - uses: actions/checkout@v4
+
+            - name: Set up Docker Buildx
+              uses: docker/setup-buildx-action@v2
+
+            - name: Configure AWS credentials
+              uses: aws-actions/configure-aws-credentials@v4
+              with:
+                  role-to-assume: ${{ secrets.AWS_ROLE_TO_ASSUME }}
+                  aws-region: ${{ env.AWS_REGION }}
+
+            - name: Get AWS Account ID
+              id: account
+              run: |
+                  ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
+                  echo "account_id=$ACCOUNT_ID" >> $GITHUB_OUTPUT
+
+            - name: Docker Build & Push
+              env:
+                  ENV: ${{ inputs.environment }}
+                  IMAGE_TAG: ${{ inputs.image-tag }}
+                  AWS_ACCOUNT_ID: ${{ steps.account.outputs.account_id }}
+              run: |
+                  chmod +x scripts/docker-build.sh
+                  make docker-push
+
+    ecs-deploy:
+        name: ECS Deploy - ${{ inputs.environment }}
+        runs-on: ubuntu-latest
+        if: needs.validate.outputs.proceed == 'true' && !inputs.terraform-only
+        needs: [validate, approval, terraform-apply, docker-build]
         environment:
             name: ${{ inputs.environment }}
         steps:
-            - name: AWS Authentication
-              uses: ./.github/actions/aws-auth
+            - uses: actions/checkout@v4
+
+            - name: Configure AWS credentials
+              uses: aws-actions/configure-aws-credentials@v4
               with:
-                  role-arn: ${{ secrets.AWS_ROLE_TO_ASSUME }}
+                  role-to-assume: ${{ secrets.AWS_ROLE_TO_ASSUME }}
                   aws-region: ${{ env.AWS_REGION }}
 
-            - name: Automatic Rollback
+            - name: Get AWS Account ID
+              id: account
               run: |
-                  echo "⚠ Deployment failed, initiating automatic rollback..."
+                  ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
+                  echo "account_id=$ACCOUNT_ID" >> $GITHUB_OUTPUT
 
-                  CLUSTER="mypythonproject1-cluster-${{ inputs.environment }}"
-                  SERVICES=("backend-service-${{ inputs.environment }}" "frontend-service-${{ inputs.environment }}")
+            - name: ECS Deploy
+              env:
+                  ENV: ${{ inputs.environment }}
+                  IMAGE_TAG: ${{ inputs.image-tag }}
+                  AWS_ACCOUNT_ID: ${{ steps.account.outputs.account_id }}
+              run: |
+                  chmod +x scripts/ecs-deploy.sh
+                  make ecs-deploy
 
-                  for SERVICE in "${SERVICES[@]}"; do
-                    echo "Rolling back $SERVICE..."
-                    
-                    CURRENT_TD=$(aws ecs describe-services \
-                      --cluster "$CLUSTER" \
-                      --services "$SERVICE" \
-                      --query 'services[0].taskDefinition' \
-                      --output text)
-                    
-                    PREVIOUS_TD=$(aws ecs list-task-definitions \
-                      --family-prefix "${SERVICE}" \
-                      --sort DESCENDING \
-                      --query "taskDefinitionArns[1]" \
-                      --output text)
-                    
-                    if [ -n "$PREVIOUS_TD" ] && [ "$PREVIOUS_TD" != "None" ]; then
-                      aws ecs update-service \
-                        --cluster "$CLUSTER" \
-                        --service "$SERVICE" \
-                        --task-definition "$PREVIOUS_TD" \
-                        --force-new-deployment
-                      
-                      echo "✓ Rollback initiated for $SERVICE"
-                    else
-                      echo "⚠ No previous task definition found for $SERVICE"
-                    fi
-                  done
+    post-deployment:
+        name: Post-Deployment - ${{ inputs.environment }}
+        runs-on: ubuntu-latest
+        if: success()
+        needs: [validate, ecs-deploy]
+        steps:
+            - uses: actions/checkout@v4
+
+            - name: Deployment Summary
+              run: |
+                  echo "## ✅ Deployment Successful" >> $GITHUB_STEP_SUMMARY
+                  echo "" >> $GITHUB_STEP_SUMMARY
+                  echo "| Attribute | Value |" >> $GITHUB_STEP_SUMMARY
+                  echo "|-----------|-------|" >> $GITHUB_STEP_SUMMARY
+                  echo "| Environment | ${{ inputs.environment }} |" >> $GITHUB_STEP_SUMMARY
+                  echo "| Image Tag | ${{ inputs.image-tag }} |" >> $GITHUB_STEP_SUMMARY
+                  echo "| Branch | ${{ github.ref_name }} |" >> $GITHUB_STEP_SUMMARY
+                  echo "| Commit | ${{ github.sha }} |" >> $GITHUB_STEP_SUMMARY
+                  echo "| Deployed by | ${{ github.actor }} |" >> $GITHUB_STEP_SUMMARY
+                  echo "| Timestamp | $(date -u +'%Y-%m-%d %H:%M:%S UTC') |" >> $GITHUB_STEP_SUMMARY
+
+    notify-failure:
+        name: Notify Failure
+        runs-on: ubuntu-latest
+        if: failure()
+        needs:
+            [
+                validate,
+                terraform-plan,
+                terraform-apply,
+                docker-build,
+                ecs-deploy,
+            ]
+        steps:
+            - name: Deployment Failed
+              run: |
+                  echo "## ❌ Deployment Failed" >> $GITHUB_STEP_SUMMARY
+                  echo "Environment: ${{ inputs.environment }}" >> $GITHUB_STEP_SUMMARY
+                  echo "Image Tag: ${{ inputs.image-tag }}" >> $GITHUB_STEP_SUMMARY
+                  exit 1

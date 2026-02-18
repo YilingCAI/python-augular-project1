@@ -1,6 +1,3 @@
-# GitHub Actions Environment Configuration
-# Copy this to .github/workflows/config.json and customize
-
 {
     "environments": {
         "dev": {

@@ -1,42 +1,164 @@
 version: "3.9"
 
 services:
-  frontend:
-    build:
-      context: ../frontend
-      dockerfile: Dockerfile
-    container_name: tic_tac_toe_frontend
+  # ========================================================================
+  # PostgreSQL Database
+  # ========================================================================
+  db:
+    image: postgres:16-alpine
+    container_name: myproject_db
+    restart: unless-stopped
     ports:
-      - "4200:4200"
+      - "5432:5432"
     environment:
-      - NEXT_PUBLIC_API_BASE_URL=http://localhost:8000
-    depends_on:
-      - backend
-    restart: always
+      POSTGRES_USER: ${DATABASE_USER:-postgres}
+      POSTGRES_PASSWORD: ${DATABASE_PASSWORD:-postgres}
+      POSTGRES_DB: ${DATABASE_NAME:-myproject_dev}
+      POSTGRES_INITDB_ARGS: "-c shared_buffers=256MB -c max_connections=200"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./init-db.sql:/docker-entrypoint-initdb.d/init.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${DATABASE_USER:-postgres}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - myproject-network
+    labels:
+      - "com.docker.compose.service=database"
 
+  # ========================================================================
+  # FastAPI Backend
+  # ========================================================================
   backend:
     build:
       context: ../backend
       dockerfile: Dockerfile
-    container_name: tic_tac_toe_backend
+      args:
+        - PYTHON_VERSION=3.12
+    container_name: myproject_backend
+    restart: unless-stopped
     ports:
       - "8000:8000"
     environment:
-      - DATABASE_URL=postgresql://postgres:postgres@db:5432/mydatabase
+      # Application
+      ENVIRONMENT: ${ENVIRONMENT:-development}
+      DEBUG: ${DEBUG:-true}
+      LOG_LEVEL: ${LOG_LEVEL:-DEBUG}
+      
+      # Backend Server
+      BACKEND_HOST: 0.0.0.0
+      BACKEND_PORT: 8000
+      BACKEND_RELOAD: ${BACKEND_RELOAD:-true}
+      BACKEND_WORKERS: 1
+      
+      # API
+      API_TITLE: ${API_TITLE:-MyProject API}
+      API_VERSION: ${API_VERSION:-1.0.0}
+      
+      # Database
+      DATABASE_USER: ${DATABASE_USER:-postgres}
+      DATABASE_PASSWORD: ${DATABASE_PASSWORD:-postgres}
+      DATABASE_HOST: db
+      DATABASE_PORT: 5432
+      DATABASE_NAME: ${DATABASE_NAME:-myproject_dev}
+      DATABASE_POOL_SIZE: 5
+      DATABASE_ECHO: ${DATABASE_ECHO:-true}
+      
+      # Security
+      JWT_SECRET_KEY: ${JWT_SECRET_KEY:-dev-secret-key-change-in-production}
+      JWT_ALGORITHM: ${JWT_ALGORITHM:-HS256}
+      
+      # CORS
+      ALLOWED_ORIGINS: ${ALLOWED_ORIGINS:-http://localhost:4200,http://localhost:3000}
+      
+      # Frontend
+      FRONTEND_URL: ${FRONTEND_URL:-http://localhost:4200}
+      API_BASE_URL: ${API_BASE_URL:-http://localhost:8000}
+      
+      # Logging
+      LOG_FORMAT: ${LOG_FORMAT:-text}
+      LOG_OUTPUT: ${LOG_OUTPUT:-console}
+    depends_on:
+      db:
+        condition: service_healthy
+    volumes:
+      - ../backend:/app
+      - /app/__pycache__
+    networks:
+      - myproject-network
+    labels:
+      - "com.docker.compose.service=backend"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+  # ========================================================================
+  # Angular Frontend
+  # ========================================================================
+  frontend:
+    build:
+      context: ../frontend
+      dockerfile: Dockerfile
+      args:
+        - NODE_VERSION=20
+    container_name: myproject_frontend
+    restart: unless-stopped
+    ports:
+      - "4200:4200"
+    environment:
+      # Angular
+      NG_HOST: 0.0.0.0
+      NG_PORT: 4200
+      
+      # API Configuration
+      API_BASE_URL: ${API_BASE_URL:-http://localhost:8000}
+      FRONTEND_URL: ${FRONTEND_URL:-http://localhost:4200}
+    depends_on:
+      - backend
+    volumes:
+      - ../frontend:/app
+      - /app/node_modules
+    networks:
+      - myproject-network
+    labels:
+      - "com.docker.compose.service=frontend"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:4200"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+  # ========================================================================
+  # Adminer (Database Management UI - Development Only)
+  # ========================================================================
+  adminer:
+    image: adminer:latest
+    container_name: myproject_adminer
+    restart: unless-stopped
+    ports:
+      - "8080:8080"
     depends_on:
       - db
-    restart: always
-    command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
-
-  db:
-    image: postgres:16
-    container_name: my_postgres
-    restart: always
+    networks:
+      - myproject-network
+    labels:
+      - "com.docker.compose.service=admin-ui"
     environment:
-      POSTGRES_USER: postgres
-      POSTGRES_PASSWORD: postgres
-      POSTGRES_DB: mydatabase
-    ports:
-      - "5432:5432"
-    volumes:
-      - ./postgres_data:/var/lib/postgresql/data
+      - ADMINER_DEFAULT_SERVER=db
+
+volumes:
+  postgres_data:
+    driver: local
+    labels:
+      - "com.docker.compose.volume=database"
+
+networks:
+  myproject-network:
+    driver: bridge
+    name: myproject-network

@@ -1,88 +1,273 @@
-.PHONY: help install dev test lint format clean build backend frontend backend-test frontend-test
+.PHONY: help install dev docker-up docker-down docker-logs \
+	test backend-test frontend-test lint format clean \
+	tf-validate tf-plan tf-apply tf-destroy \
+	docker-build docker-push ecs-deploy deploy deploy-staging deploy-prod
 
-# Default target
+# ============================================================================
+# COLORS & FORMATTING
+# ============================================================================
+BLUE := \033[0;34m
+GREEN := \033[0;32m
+YELLOW := \033[0;33m
+RED := \033[0;31m
+NC := \033[0m # No Color
+
+# ============================================================================
+# HELP & DOCUMENTATION
+# ============================================================================
+
 help:
-    @echo "Available commands:"
-    @echo "  make install          - Install dependencies for both frontend and backend"
-    @echo "  make dev              - Run both frontend and backend in development mode"
-    @echo "  make backend          - Run backend only"
-    @echo "  make frontend         - Run frontend only"
-    @echo "  make test             - Run all tests"
-    @echo "  make backend-test     - Run backend tests"
-    @echo "  make frontend-test    - Run frontend tests"
-    @echo "  make lint             - Run linter for both projects"
-    @echo "  make format           - Format code for both projects"
-    @echo "  make build            - Build both frontend and backend"
-    @echo "  make clean            - Clean all build artifacts and dependencies"
+	@echo ""
+	@echo "$(BLUE)╔════════════════════════════════════════════════════════════════╗$(NC)"
+	@echo "$(BLUE)║    DevOps Makefile - Production-Ready Development Setup       ║$(NC)"
+	@echo "$(BLUE)╚════════════════════════════════════════════════════════════════╝$(NC)"
+	@echo ""
+	@echo "$(GREEN)🐳 DOCKER COMPOSE (Recommended for local development)$(NC)"
+	@echo "  $(YELLOW)make docker-up$(NC)            - Start all services (db, backend, frontend)"
+	@echo "  $(YELLOW)make docker-down$(NC)          - Stop all services"
+	@echo "  $(YELLOW)make docker-logs$(NC)          - View Docker Compose logs"
+	@echo "  $(YELLOW)make docker-clean$(NC)         - Remove volumes and containers"
+	@echo ""
+	@echo "$(GREEN)🔧 LOCAL DEVELOPMENT (Without Docker)$(NC)"
+	@echo "  $(YELLOW)make install$(NC)              - Install dependencies (backend & frontend)"
+	@echo "  $(YELLOW)make dev$(NC)                  - Run backend & frontend (local)"
+	@echo "  $(YELLOW)make backend$(NC)              - Run backend only"
+	@echo "  $(YELLOW)make frontend$(NC)             - Run frontend only"
+	@echo ""
+	@echo "$(GREEN)🧪 TESTING & QUALITY$(NC)"
+	@echo "  $(YELLOW)make test$(NC)                 - Run all tests"
+	@echo "  $(YELLOW)make backend-test$(NC)         - Run backend tests with coverage"
+	@echo "  $(YELLOW)make backend-test-integration$(NC) - Integration tests only"
+	@echo "  $(YELLOW)make backend-test-e2e$(NC)     - E2E tests only"
+	@echo "  $(YELLOW)make frontend-test$(NC)        - Frontend tests"
+	@echo "  $(YELLOW)make lint$(NC)                 - Run linters (ruff, eslint)"
+	@echo "  $(YELLOW)make format$(NC)               - Format code (black, prettier)"
+	@echo ""
+	@echo "$(GREEN)🏗️  TERRAFORM$(NC)"
+	@echo "  $(YELLOW)make tf-validate$(NC)          - Validate Terraform"
+	@echo "  $(YELLOW)make tf-plan$(NC)              - Plan infrastructure (ENV=staging|prod)"
+	@echo "  $(YELLOW)make tf-apply$(NC)             - Apply infrastructure (ENV=staging|prod)"
+	@echo "  $(YELLOW)make tf-destroy$(NC)           - Destroy infrastructure (ENV=staging|prod)"
+	@echo ""
+	@echo "$(GREEN)🐳 DOCKER BUILD & PUSH$(NC)"
+	@echo "  $(YELLOW)make docker-build$(NC)         - Build Docker images (ENV=staging|prod)"
+	@echo "  $(YELLOW)make docker-push$(NC)          - Push to ECR (ENV=staging|prod)"
+	@echo ""
+	@echo "$(GREEN)🚀 DEPLOYMENT$(NC)"
+	@echo "  $(YELLOW)make deploy$(NC)               - Full deploy (ENV=staging|prod IMAGE_TAG=...)"
+	@echo "  $(YELLOW)make deploy-staging$(NC)       - Deploy to staging"
+	@echo "  $(YELLOW)make deploy-prod$(NC)          - Deploy to production"
+	@echo ""
+	@echo "$(GREEN)🧹 CLEANUP$(NC)"
+	@echo "  $(YELLOW)make clean$(NC)                - Remove build artifacts"
+	@echo ""
+	@echo "$(YELLOW)📝 EXAMPLES:$(NC)"
+	@echo "  $(BLUE)make docker-up$(NC)              # Start dev environment with Docker"
+	@echo "  $(BLUE)make backend-test$(NC)           # Run tests locally"
+	@echo "  $(BLUE)make deploy ENV=staging IMAGE_TAG=v1.0.0$(NC)"
+	@echo ""
 
-# Install dependencies
+# ============================================================================
+# DOCKER COMPOSE DEVELOPMENT
+# ============================================================================
+
+docker-up:
+	@echo "$(GREEN)🐳 Starting Docker Compose services...$(NC)"
+	cd deploy && docker-compose up -d
+	@echo ""
+	@echo "$(GREEN)✅ Services started!$(NC)"
+	@echo ""
+	@echo "$(BLUE)Access points:$(NC)"
+	@echo "  Frontend:    $(BLUE)http://localhost:4200$(NC)"
+	@echo "  Backend:     $(BLUE)http://localhost:8000$(NC)"
+	@echo "  Database:    $(BLUE)postgresql://localhost:5432$(NC)"
+	@echo "  Adminer:     $(BLUE)http://localhost:8080$(NC)"
+	@echo ""
+	@echo "$(YELLOW)Tip: Use 'make docker-logs' to view logs$(NC)"
+
+docker-down:
+	@echo "$(YELLOW)⬇️  Stopping Docker Compose services...$(NC)"
+	cd deploy && docker-compose down
+	@echo "$(GREEN)✅ Services stopped$(NC)"
+
+docker-restart:
+	@echo "$(YELLOW)🔄 Restarting Docker Compose services...$(NC)"
+	cd deploy && docker-compose restart
+	@echo "$(GREEN)✅ Services restarted$(NC)"
+
+docker-logs:
+	cd deploy && docker-compose logs -f
+
+docker-logs-backend:
+	cd deploy && docker-compose logs -f backend
+
+docker-logs-frontend:
+	cd deploy && docker-compose logs -f frontend
+
+docker-logs-db:
+	cd deploy && docker-compose logs -f db
+
+docker-clean:
+	@echo "$(RED)🧹 Removing Docker Compose volumes and containers...$(NC)"
+	cd deploy && docker-compose down -v
+	@echo "$(GREEN)✅ Cleaned$(NC)"
+
+docker-ps:
+	@echo "$(BLUE)Docker Compose Services:$(NC)"
+	cd deploy && docker-compose ps
+
+# ============================================================================
+# LOCAL DEVELOPMENT (Without Docker)
+# ============================================================================
+
 install:
-    @echo "Installing backend dependencies..."
-    cd backend && pip install -r requirements.txt
-    @echo "Installing frontend dependencies..."
-    cd frontend && npm install
+	@echo "$(GREEN)📦 Installing dependencies...$(NC)"
+	cd backend && pip install -e . && cd ..
+	cd frontend && npm install && cd ..
+	@echo "$(GREEN)✅ Dependencies installed!$(NC)"
 
-# Development - Run both frontend and backend
 dev:
-    @echo "Starting development environment..."
-    @echo "Backend will run on http://localhost:8000"
-    @echo "Frontend will run on http://localhost:4200"
-    @(cd backend && python -m uvicorn main:app --reload) & \
-    (cd frontend && npm start)
+	@echo "$(GREEN)🚀 Starting development environment...$(NC)"
+	@echo "  Backend:  http://localhost:8000"
+	@echo "  Frontend: http://localhost:4200"
+	@echo ""
+	@echo "$(YELLOW)Make sure PostgreSQL is running locally (or use 'make docker-up')!$(NC)"
+	@echo ""
+	@(cd backend && python -m uvicorn main:app --reload) & \
+	(cd frontend && ng serve --open)
 
-# Run backend only
 backend:
-    @echo "Starting backend on http://localhost:8000"
-    cd backend && python -m uvicorn main:app --reload
+	@echo "$(GREEN)🚀 Starting backend on http://localhost:8000$(NC)"
+	cd backend && python -m uvicorn main:app --reload
 
-# Run frontend only
 frontend:
-    @echo "Starting frontend on http://localhost:4200"
-    cd frontend && npm start
+	@echo "$(GREEN)🚀 Starting frontend on http://localhost:4200$(NC)"
+	cd frontend && npm start
 
-# Run all tests
+# ============================================================================
+# TESTING & CODE QUALITY
+# ============================================================================
+
 test: backend-test frontend-test
-    @echo "All tests completed!"
+	@echo "$(GREEN)✅ All tests completed!$(NC)"
 
-# Run backend tests
 backend-test:
-    @echo "Running backend tests..."
-    cd backend && python -m pytest -v --tb=short
+	@echo "$(GREEN)🧪 Running backend tests with coverage...$(NC)"
+	cd backend && python -m pytest tests/ -v --tb=short --cov=app --cov-report=html
+	@echo "$(GREEN)✅ Backend tests passed!$(NC)"
+	@echo "$(BLUE)Coverage report: backend/htmlcov/index.html$(NC)"
 
-# Run frontend tests
+backend-test-integration:
+	@echo "$(GREEN)🧪 Running backend integration tests...$(NC)"
+	cd backend && python -m pytest tests/integration -v --tb=short
+	@echo "$(GREEN)✅ Integration tests passed!$(NC)"
+
+backend-test-e2e:
+	@echo "$(GREEN)🧪 Running backend E2E tests...$(NC)"
+	cd backend && python -m pytest tests/e2e -v --tb=short
+	@echo "$(GREEN)✅ E2E tests passed!$(NC)"
+
 frontend-test:
-    @echo "Running frontend tests..."
-    cd frontend && npm run test -- --watch=false --browsers=ChromeHeadless
+	@echo "$(GREEN)🧪 Running frontend tests...$(NC)"
+	cd frontend && npm run test -- --watch=false --coverage
+	@echo "$(GREEN)✅ Frontend tests passed!$(NC)"
 
-# Lint code
 lint:
-    @echo "Linting backend..."
-    cd backend && python -m pylint **/*.py || true
-    @echo "Linting frontend..."
-    cd frontend && npm run lint
+	@echo "$(GREEN)🔍 Running linters...$(NC)"
+	cd backend && ruff check app/ --output-format=github
+	cd frontend && npm run lint
+	@echo "$(GREEN)✅ Linting complete!$(NC)"
 
-# Format code
 format:
-    @echo "Formatting backend..."
-    cd backend && python -m black . && python -m isort .
-    @echo "Formatting frontend..."
-    cd frontend && npm run format
+	@echo "$(GREEN)✨ Formatting code...$(NC)"
+	cd backend && black app/ && ruff check app/ --fix
+	cd frontend && npm run format
+	@echo "$(GREEN)✅ Code formatted!$(NC)"
 
-# Build for production
-build:
-    @echo "Building backend..."
-    cd backend && python -m PyInstaller main.py --onefile || true
-    @echo "Building frontend..."
-    cd frontend && npm run build
+# ============================================================================
+# TERRAFORM OPERATIONS
+# ============================================================================
 
-# Clean build artifacts and dependencies
+tf-validate:
+	@echo "$(GREEN)📋 Validating Terraform...$(NC)"
+	@bash scripts/terraform-validate.sh
+
+tf-plan:
+	@if [ -z "$(ENV)" ]; then echo "$(RED)❌ ENV not set. Usage: make tf-plan ENV=staging$(NC)"; exit 1; fi
+	@echo "$(GREEN)📋 Planning Terraform for ENV=$(ENV)...$(NC)"
+	@bash scripts/terraform-plan.sh
+
+tf-apply:
+	@if [ -z "$(ENV)" ]; then echo "$(RED)❌ ENV not set. Usage: make tf-apply ENV=staging$(NC)"; exit 1; fi
+	@echo "$(GREEN)🚀 Applying Terraform for ENV=$(ENV)...$(NC)"
+	@bash scripts/terraform-apply.sh
+
+tf-destroy:
+	@if [ -z "$(ENV)" ]; then echo "$(RED)❌ ENV not set. Usage: make tf-destroy ENV=staging$(NC)"; exit 1; fi
+	@echo "$(RED)⚠️  Destroying Terraform infrastructure for ENV=$(ENV)...$(NC)"
+	@bash scripts/terraform-destroy.sh
+
+# ============================================================================
+# DOCKER BUILD & PUSH
+# ============================================================================
+
+docker-build:
+	@if [ -z "$(ENV)" ]; then echo "$(RED)❌ ENV not set. Usage: make docker-build ENV=staging$(NC)"; exit 1; fi
+	@echo "$(GREEN)🔨 Building Docker images for ENV=$(ENV)...$(NC)"
+	@bash scripts/docker-build.sh
+
+docker-push:
+	@if [ -z "$(ENV)" ]; then echo "$(RED)❌ ENV not set. Usage: make docker-push ENV=staging$(NC)"; exit 1; fi
+	@echo "$(GREEN)📤 Pushing Docker images for ENV=$(ENV)...$(NC)"
+	@bash scripts/docker-build.sh push
+
+# ============================================================================
+# ECS DEPLOYMENT
+# ============================================================================
+
+ecs-deploy:
+	@if [ -z "$(ENV)" ] || [ -z "$(IMAGE_TAG)" ]; then \
+		echo "$(RED)❌ Missing parameters. Usage: make ecs-deploy ENV=staging IMAGE_TAG=sha-abc123$(NC)"; exit 1; fi
+	@echo "$(GREEN)🚀 Deploying to ECS (ENV=$(ENV), IMAGE_TAG=$(IMAGE_TAG))...$(NC)"
+	@bash scripts/ecs-deploy.sh
+
+# ============================================================================
+# FULL DEPLOYMENT ORCHESTRATION
+# ============================================================================
+
+deploy:
+	@if [ -z "$(ENV)" ] || [ -z "$(IMAGE_TAG)" ]; then \
+		echo "$(RED)❌ Missing parameters. Usage: make deploy ENV=staging IMAGE_TAG=sha-abc123$(NC)"; exit 1; fi
+	@echo "$(GREEN)🚀 Full deployment starting (ENV=$(ENV), IMAGE_TAG=$(IMAGE_TAG))...$(NC)"
+	@$(MAKE) docker-build ENV=$(ENV)
+	@$(MAKE) docker-push ENV=$(ENV)
+	@$(MAKE) ecs-deploy ENV=$(ENV) IMAGE_TAG=$(IMAGE_TAG)
+	@echo "$(GREEN)✅ Deployment complete!$(NC)"
+
+deploy-staging:
+	@if [ -z "$(IMAGE_TAG)" ]; then echo "$(RED)❌ IMAGE_TAG not set. Usage: make deploy-staging IMAGE_TAG=...$(NC)"; exit 1; fi
+	@echo "$(GREEN)🚀 Deploying to STAGING (ENV=staging, IMAGE_TAG=$(IMAGE_TAG))...$(NC)"
+	@$(MAKE) deploy ENV=staging IMAGE_TAG=$(IMAGE_TAG)
+
+deploy-prod:
+	@if [ -z "$(IMAGE_TAG)" ]; then echo "$(RED)❌ IMAGE_TAG not set. Usage: make deploy-prod IMAGE_TAG=...$(NC)"; exit 1; fi
+	@echo "$(RED)🚀 Deploying to PRODUCTION (ENV=prod, IMAGE_TAG=$(IMAGE_TAG))...$(NC)"
+	@$(MAKE) deploy ENV=prod IMAGE_TAG=$(IMAGE_TAG)
+
+# ============================================================================
+# CLEANUP
+# ============================================================================
+
 clean:
-    @echo "Cleaning up..."
-    rm -rf backend/__pycache__
-    rm -rf backend/.pytest_cache
-    rm -rf backend/dist
-    rm -rf backend/build
-    rm -rf frontend/dist
-    rm -rf frontend/.angular
-    rm -rf frontend/node_modules
-    @echo "Clean completed!"
+	@echo "$(YELLOW)🧹 Cleaning build artifacts...$(NC)"
+	@find . -type d -name __pycache__ -exec rm -rf {} + 2>/dev/null || true
+	@find . -type d -name .pytest_cache -exec rm -rf {} + 2>/dev/null || true
+	@find . -type d -name node_modules -exec rm -rf {} + 2>/dev/null || true
+	@find . -type d -name dist -exec rm -rf {} + 2>/dev/null || true
+	@find . -type d -name build -exec rm -rf {} + 2>/dev/null || true
+	@find . -type d -name .angular -exec rm -rf {} + 2>/dev/null || true
+	@echo "$(GREEN)✅ Cleanup complete!$(NC)"
+
+.DEFAULT_GOAL := help
+	@rm -f .env .env.local
+	@echo "✅ Cleanup complete!"

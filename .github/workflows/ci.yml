@@ -146,6 +146,38 @@ jobs:
                     --maxfail=5 \
                     --tb=short
 
+            - name: Run integration tests
+              working-directory: backend
+              env:
+                  DATABASE_USER: postgres
+                  DATABASE_PASSWORD: postgres
+                  DATABASE_HOST: localhost
+                  DATABASE_PORT: 5432
+                  DATABASE_NAME: testdb
+                  JWT_SECRET_KEY: test-secret-key-for-ci
+                  JWT_ALGORITHM: HS256
+                  JWT_EXPIRE_MINUTES: 60
+                  ENVIRONMENT: test
+              run: |
+                  pytest tests/integration -v --tb=short
+              continue-on-error: true
+
+            - name: Run E2E tests
+              working-directory: backend
+              env:
+                  DATABASE_USER: postgres
+                  DATABASE_PASSWORD: postgres
+                  DATABASE_HOST: localhost
+                  DATABASE_PORT: 5432
+                  DATABASE_NAME: testdb
+                  JWT_SECRET_KEY: test-secret-key-for-ci
+                  JWT_ALGORITHM: HS256
+                  JWT_EXPIRE_MINUTES: 60
+                  ENVIRONMENT: test
+              run: |
+                  pytest tests/e2e -v --tb=short
+              continue-on-error: true
+
             - name: Upload coverage to Codecov
               uses: codecov/codecov-action@v3
               with:
