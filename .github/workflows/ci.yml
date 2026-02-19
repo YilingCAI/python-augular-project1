@@ -179,7 +179,7 @@ jobs:
 
             - name: Publish test results
               if: always()
-              uses: EnricoMi/publish-unit-test-result-action@v2
+              uses: ./.github/actions/publish-test-results
               with:
                   files: |
                       backend/test-results-unit.xml
@@ -261,7 +261,7 @@ jobs:
               run: terraform validate
 
             - name: Run tflint
-              uses: terraform-linters/setup-tflint@v3
+              uses: ./.github/actions/setup-tflint
             - run: |
                   cd infra
                   tflint --init
