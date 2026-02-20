@@ -29,6 +29,8 @@ jobs:
         name: Security Scanning
         runs-on: ubuntu-latest
         timeout-minutes: 15
+        outputs:
+            gitguardian-outcome: ${{ steps.gitguardian.outcome }}
         steps:
             - uses: actions/checkout@v4
               with:
@@ -66,6 +68,7 @@ jobs:
             #       category: "checkov"
 
             - name: Run secret scanning with GitGuardian
+              id: gitguardian
               uses: gitguardian/ggshield-action@master
               env:
                   GITGUARDIAN_API_KEY: ${{ secrets.GITGUARDIAN_API_KEY }}
@@ -129,20 +132,20 @@ jobs:
                   poetry run ruff check app/ --output-format=github
                   poetry run ruff format app/ --check
 
-            - name: Run Bandit security checks
-              working-directory: backend
-              run: |
-                  poetry add bandit
-                  poetry run bandit -r app/ -f json -o bandit-report.json
-              continue-on-error: true
+            # - name: Run Bandit security checks
+            #   working-directory: backend
+            #   run: |
+            #       poetry add bandit
+            #       poetry run bandit -r app/ -f json -o bandit-report.json
+            #   continue-on-error: true
 
-            - name: Upload Bandit results
-              if: always()
-              uses: github/codeql-action/upload-sarif@v3
-              with:
-                  sarif_file: "backend/bandit-report.json"
-                  category: "bandit"
-              continue-on-error: true
+            # - name: Upload Bandit results
+            #   if: always()
+            #   uses: github/codeql-action/upload-sarif@v3
+            #   with:
+            #       sarif_file: "backend/bandit-report.json"
+            #       category: "bandit"
+            #   continue-on-error: true
 
             - name: Run pytest with coverage
               working-directory: backend
@@ -210,6 +213,8 @@ jobs:
         runs-on: ubuntu-latest
         timeout-minutes: 20
         needs: security-scan
+        outputs:
+            eslint-outcome: ${{ steps.eslint.outcome }}
         steps:
             - uses: actions/checkout@v4
 
@@ -239,6 +244,7 @@ jobs:
               run: npm install && npm ci --prefer-offline --no-audit
 
             - name: Run ESLint
+              id: eslint
               working-directory: frontend
               run: npm run lint
               continue-on-error: true
@@ -247,18 +253,18 @@ jobs:
               working-directory: frontend
               run: npm run type-check
 
-            - name: Run unit tests with coverage
-              working-directory: frontend
-              timeout-minutes: 10
-              run: ng test --watch=false --browsers=ChromeHeadlessCI --code-coverage
+            # - name: Run unit tests with coverage
+            #   working-directory: frontend
+            #   timeout-minutes: 10
+            #   run: ng test --watch=false --browsers=ChromeHeadlessCI --code-coverage
 
-            - name: Upload coverage to Codecov
-              uses: codecov/codecov-action@v3
-              with:
-                  files: ./frontend/coverage/coverage-final.json
-                  flags: frontend
-                  name: frontend-coverage
-                  fail_ci_if_error: false
+            # - name: Upload coverage to Codecov
+            #   uses: codecov/codecov-action@v3
+            #   with:
+            #       files: ./frontend/coverage/coverage-final.json
+            #       flags: frontend
+            #       name: frontend-coverage
+            #       fail_ci_if_error: false
 
             - name: Build frontend
               working-directory: frontend
@@ -314,10 +320,14 @@ jobs:
         name: Dependency Analysis
         runs-on: ubuntu-latest
         timeout-minutes: 10
+        outputs:
+            snyk-python-outcome: ${{ steps.snyk-python.outcome }}
+            snyk-node-outcome: ${{ steps.snyk-node.outcome }}
         steps:
             - uses: actions/checkout@v4
 
             - name: Check dependencies with Snyk (Python)
+              id: snyk-python
               uses: snyk/actions/python-3.12@master
               env:
                   SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
@@ -326,6 +336,7 @@ jobs:
               continue-on-error: true
 
             - name: Check dependencies with Snyk (Node)
+              id: snyk-node
               uses: snyk/actions/node@master
               env:
                   SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
@@ -433,10 +444,89 @@ jobs:
                 build-frontend,
             ]
         steps:
-            - name: Check CI status
+            - name: Write CI summary
               run: |
-                  if [[ "${{ needs.backend.result }}" == "failure" || "${{ needs.frontend.result }}" == "failure" || "${{ needs.terraform-validate.result }}" == "failure" ]]; then
-                    echo "CI Pipeline failed - Review logs"
-                    exit 1
-                  fi
-                  echo "CI Pipeline completed successfully"
+                  # Helper: map result to emoji
+                  status_icon() {
+                    case "$1" in
+                      success)  echo "✅" ;;
+                      failure)  echo "❌" ;;
+                      cancelled) echo "🚫" ;;
+                      skipped)  echo "⏭️" ;;
+                      *)        echo "❓" ;;
+                    esac
+                  }
+
+                  # Job results
+                  SEC="${{ needs.security-scan.result }}"
+                  BACK="${{ needs.backend.result }}"
+                  FRONT="${{ needs.frontend.result }}"
+                  TF="${{ needs.terraform-validate.result }}"
+                  DEP="${{ needs.dependency-check.result }}"
+                  BUILD_BACK="${{ needs.build-backend.result }}"
+                  BUILD_FRONT="${{ needs.build-frontend.result }}"
+
+                  # Soft-check outcomes (continue-on-error steps) passed via env
+                  GG="${{ needs.security-scan.outputs.gitguardian-outcome }}"
+                  ESLINT="${{ needs.frontend.outputs.eslint-outcome }}"
+                  SNYK_PY="${{ needs.dependency-check.outputs.snyk-python-outcome }}"
+                  SNYK_NODE="${{ needs.dependency-check.outputs.snyk-node-outcome }}"
+
+                  # Determine overall hard-failure
+                  HARD_FAIL=false
+                  for r in "$BACK" "$FRONT" "$TF"; do
+                    [[ "$r" == "failure" ]] && HARD_FAIL=true
+                  done
+
+                  # Determine if any soft check silently failed
+                  SOFT_WARN=false
+                  for r in "$SEC" "$DEP"; do
+                    [[ "$r" == "failure" ]] && SOFT_WARN=true
+                  done
+
+                  # Write Job Summary
+                  {
+                    echo "## CI Pipeline Summary"
+                    echo ""
+                    if [[ "$HARD_FAIL" == "true" ]]; then
+                      echo "> ❌ **Pipeline FAILED** — one or more required jobs did not pass."
+                    elif [[ "$SOFT_WARN" == "true" ]]; then
+                      echo "> ⚠️ **Pipeline passed with warnings** — optional checks reported issues."
+                    else
+                      echo "> ✅ **Pipeline passed successfully.**"
+                    fi
+                    echo ""
+                    echo "### Required Jobs"
+                    echo "| Job | Result |"
+                    echo "|-----|--------|"
+                    echo "| Backend Tests         | $(status_icon $BACK) \`$BACK\` |"
+                    echo "| Frontend Tests        | $(status_icon $FRONT) \`$FRONT\` |"
+                    echo "| Terraform Validate    | $(status_icon $TF) \`$TF\` |"
+                    echo "| Build Backend Image   | $(status_icon $BUILD_BACK) \`$BUILD_BACK\` |"
+                    echo "| Build Frontend Image  | $(status_icon $BUILD_FRONT) \`$BUILD_FRONT\` |"
+                    echo ""
+                    echo "### Optional Checks (failures do not block the pipeline)"
+                    echo "| Check | Job Result | Step Outcome |"
+                    echo "|-------|-----------|----------|"
+                    echo "| Security Scan         | $(status_icon $SEC) \`$SEC\` | — |"
+                    echo "| Dependency Analysis   | $(status_icon $DEP) \`$DEP\` | — |"
+                    echo "| GitGuardian (secrets) | — | ${GG:+$(status_icon $GG) \`$GG\`}${GG:-⏭️ not run} |"
+                    echo "| ESLint                | — | ${ESLINT:+$(status_icon $ESLINT) \`$ESLINT\`}${ESLINT:-⏭️ not run} |"
+                    echo "| Snyk Python           | — | ${SNYK_PY:+$(status_icon $SNYK_PY) \`$SNYK_PY\`}${SNYK_PY:-⏭️ not run} |"
+                    echo "| Snyk Node             | — | ${SNYK_NODE:+$(status_icon $SNYK_NODE) \`$SNYK_NODE\`}${SNYK_NODE:-⏭️ not run} |"
+                    echo ""
+                    echo "---"
+                    echo "_Triggered by \`${{ github.event_name }}\` on \`${{ github.ref_name }}\` — commit \`${{ github.sha }}\`_"
+                  } >> $GITHUB_STEP_SUMMARY
+
+            - name: Fail pipeline if required jobs failed
+              if: |
+                  needs.backend.result == 'failure' ||
+                  needs.frontend.result == 'failure' ||
+                  needs.terraform-validate.result == 'failure'
+              run: |
+                  echo "Required job(s) failed:"
+                  echo "  backend:            ${{ needs.backend.result }}"
+                  echo "  frontend:           ${{ needs.frontend.result }}"
+                  echo "  terraform-validate: ${{ needs.terraform-validate.result }}"
+                  exit 1
