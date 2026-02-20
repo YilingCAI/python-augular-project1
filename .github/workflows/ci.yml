@@ -3,9 +3,19 @@ name: CI
 on:
     push:
         branches: ["test"]
+        paths-ignore:
+            - "docs/**"
+            - "**/*.md"
+            - "*.md"
+            - "config/*.md"
     pull_request:
         branches: ["main", "develop", "staging"]
         types: [opened, synchronize, reopened]
+        paths-ignore:
+            - "docs/**"
+            - "**/*.md"
+            - "*.md"
+            - "config/*.md"
 
     workflow_dispatch:
 
@@ -25,6 +35,32 @@ env:
     TF_VERSION: 1.5.0
 
 jobs:
+    changes:
+        name: Detect Changed Paths
+        runs-on: ubuntu-latest
+        timeout-minutes: 3
+        outputs:
+            backend: ${{ steps.filter.outputs.backend }}
+            frontend: ${{ steps.filter.outputs.frontend }}
+            infra: ${{ steps.filter.outputs.infra }}
+            ci: ${{ steps.filter.outputs.ci }}
+        steps:
+            - uses: actions/checkout@v4
+
+            - name: Filter changed paths
+              id: filter
+              uses: dorny/paths-filter@v3
+              with:
+                  filters: |
+                      backend:
+                          - 'backend/**'
+                      frontend:
+                          - 'frontend/**'
+                      infra:
+                          - 'infra/**'
+                      ci:
+                          - '.github/**'
+
     security-scan:
         name: Security Scanning
         runs-on: ubuntu-latest
@@ -78,7 +114,11 @@ jobs:
         name: Backend Tests
         runs-on: ubuntu-latest
         timeout-minutes: 20
-        needs: security-scan
+        needs: [changes, security-scan]
+        if: |
+            needs.changes.outputs.backend == 'true' ||
+            needs.changes.outputs.ci == 'true' ||
+            github.event_name == 'workflow_dispatch'
         services:
             postgres:
                 image: postgres:16-alpine
@@ -212,7 +252,11 @@ jobs:
         name: Frontend Tests
         runs-on: ubuntu-latest
         timeout-minutes: 20
-        needs: security-scan
+        needs: [changes, security-scan]
+        if: |
+            needs.changes.outputs.frontend == 'true' ||
+            needs.changes.outputs.ci == 'true' ||
+            github.event_name == 'workflow_dispatch'
         outputs:
             eslint-outcome: ${{ steps.eslint.outcome }}
         steps:
@@ -281,7 +325,11 @@ jobs:
         name: Terraform Validation
         runs-on: ubuntu-latest
         timeout-minutes: 10
-        needs: security-scan
+        needs: [changes, security-scan]
+        if: |
+            needs.changes.outputs.infra == 'true' ||
+            needs.changes.outputs.ci == 'true' ||
+            github.event_name == 'workflow_dispatch'
         steps:
             - uses: actions/checkout@v4
 
@@ -320,6 +368,11 @@ jobs:
         name: Dependency Analysis
         runs-on: ubuntu-latest
         timeout-minutes: 10
+        needs: [changes]
+        if: |
+            needs.changes.outputs.backend == 'true' ||
+            needs.changes.outputs.frontend == 'true' ||
+            github.event_name == 'workflow_dispatch'
         outputs:
             snyk-python-outcome: ${{ steps.snyk-python.outcome }}
             snyk-node-outcome: ${{ steps.snyk-node.outcome }}
@@ -348,8 +401,11 @@ jobs:
         name: Build Backend Image
         runs-on: ubuntu-latest
         timeout-minutes: 20
-        needs: [backend, terraform-validate]
-        if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/test' || github.ref == 'refs/heads/develop' || github.ref == 'refs/heads/staging')
+        needs: [changes, backend, terraform-validate]
+        if: |
+            github.event_name == 'push' &&
+            (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/test' || github.ref == 'refs/heads/develop' || github.ref == 'refs/heads/staging') &&
+            (needs.changes.outputs.backend == 'true' || needs.changes.outputs.ci == 'true' || needs.changes.outputs.infra == 'true')
         permissions:
             contents: read
             packages: write
@@ -390,8 +446,11 @@ jobs:
         name: Build Frontend Image
         runs-on: ubuntu-latest
         timeout-minutes: 20
-        needs: [frontend, terraform-validate]
-        if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/test' || github.ref == 'refs/heads/develop' || github.ref == 'refs/heads/staging')
+        needs: [changes, frontend, terraform-validate]
+        if: |
+            github.event_name == 'push' &&
+            (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/test' || github.ref == 'refs/heads/develop' || github.ref == 'refs/heads/staging') &&
+            (needs.changes.outputs.frontend == 'true' || needs.changes.outputs.ci == 'true' || needs.changes.outputs.infra == 'true')
         permissions:
             contents: read
             packages: write
@@ -435,6 +494,7 @@ jobs:
         if: always()
         needs:
             [
+                changes,
                 security-scan,
                 backend,
                 frontend,
