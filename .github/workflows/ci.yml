@@ -28,6 +28,7 @@ jobs:
     security-scan:
         name: Security Scanning
         runs-on: ubuntu-latest
+        timeout-minutes: 15
         steps:
             - uses: actions/checkout@v4
               with:
@@ -73,6 +74,7 @@ jobs:
     backend:
         name: Backend Tests
         runs-on: ubuntu-latest
+        timeout-minutes: 20
         needs: security-scan
         services:
             postgres:
@@ -114,6 +116,7 @@ jobs:
 
             - name: Install dependencies
               working-directory: backend
+              timeout-minutes: 8
               run: |
                   python -m pip install --upgrade pip
                   pip install poetry
@@ -130,7 +133,7 @@ jobs:
               working-directory: backend
               run: |
                   poetry add bandit
-                  poetry runbandit -r app/ -f json -o bandit-report.json
+                  poetry run bandit -r app/ -f json -o bandit-report.json
               continue-on-error: true
 
             - name: Upload Bandit results
@@ -143,6 +146,7 @@ jobs:
 
             - name: Run pytest with coverage
               working-directory: backend
+              timeout-minutes: 10
               env:
                   DATABASE_USER: postgres
                   DATABASE_PASSWORD: postgres
@@ -164,6 +168,7 @@ jobs:
 
             - name: Run integration tests
               working-directory: backend
+              timeout-minutes: 10
               env:
                   DATABASE_USER: postgres
                   DATABASE_PASSWORD: postgres
@@ -203,6 +208,7 @@ jobs:
     frontend:
         name: Frontend Tests
         runs-on: ubuntu-latest
+        timeout-minutes: 20
         needs: security-scan
         steps:
             - uses: actions/checkout@v4
@@ -229,11 +235,12 @@ jobs:
 
             - name: Install dependencies
               working-directory: frontend
+              timeout-minutes: 8
               run: npm install && npm ci --prefer-offline --no-audit
 
             - name: Run ESLint
               working-directory: frontend
-              run: npx eslint "src/**/*.{ts,tsx,js,jsx}" -f json -o eslint-report.jso
+              run: npm run lint
               continue-on-error: true
 
             - name: Run TypeScript type-check
@@ -242,7 +249,8 @@ jobs:
 
             - name: Run unit tests with coverage
               working-directory: frontend
-              run: npm test --coverage --watchAll=false --passWithNoTests
+              timeout-minutes: 10
+              run: ng test --watch=false --browsers=ChromeHeadlessCI --code-coverage
 
             - name: Upload coverage to Codecov
               uses: codecov/codecov-action@v3
@@ -266,6 +274,7 @@ jobs:
     terraform-validate:
         name: Terraform Validation
         runs-on: ubuntu-latest
+        timeout-minutes: 10
         needs: security-scan
         steps:
             - uses: actions/checkout@v4
@@ -294,6 +303,7 @@ jobs:
 
             - name: Terraform init
               working-directory: infra
+              timeout-minutes: 5
               run: terraform init -backend=false
 
             - name: Terraform validate
@@ -303,6 +313,7 @@ jobs:
     dependency-check:
         name: Dependency Analysis
         runs-on: ubuntu-latest
+        timeout-minutes: 10
         steps:
             - uses: actions/checkout@v4
 
@@ -325,6 +336,7 @@ jobs:
     build-backend:
         name: Build Backend Image
         runs-on: ubuntu-latest
+        timeout-minutes: 20
         needs: [backend, terraform-validate]
         if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/test' || github.ref == 'refs/heads/develop' || github.ref == 'refs/heads/staging')
         permissions:
@@ -366,6 +378,7 @@ jobs:
     build-frontend:
         name: Build Frontend Image
         runs-on: ubuntu-latest
+        timeout-minutes: 20
         needs: [frontend, terraform-validate]
         if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/test' || github.ref == 'refs/heads/develop' || github.ref == 'refs/heads/staging')
         permissions:
@@ -407,6 +420,7 @@ jobs:
     notify-status:
         name: Notify CI Status
         runs-on: ubuntu-latest
+        timeout-minutes: 5
         if: always()
         needs:
             [
