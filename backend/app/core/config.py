@@ -14,11 +14,9 @@ Environment variables are loaded from:
 All sensitive values must be in AWS Secrets Manager for production.
 """
 
-import os
-import json
 from typing import List
 from enum import Enum
-from pydantic import Field, HttpUrl
+from pydantic import Field
 from pydantic_settings import BaseSettings
 
 
@@ -225,7 +223,7 @@ class Settings(BaseSettings):
             
             if errors:
                 raise ValueError(
-                    f"Production validation failed:\n" + "\n".join(f"- {e}" for e in errors)
+                    "Production validation failed:\n" + "\n".join(f"- {e}" for e in errors)
                 )
 
 

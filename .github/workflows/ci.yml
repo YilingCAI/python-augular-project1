@@ -129,7 +129,7 @@ jobs:
             - name: Run Bandit security checks
               working-directory: backend
               run: |
-                  pip install bandit
+                  poetry install bandit
                   bandit -r app/ -f json -o bandit-report.json
               continue-on-error: true
 

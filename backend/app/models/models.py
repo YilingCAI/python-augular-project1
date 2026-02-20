@@ -1,5 +1,5 @@
 from app.db.session import Base
-from sqlalchemy import Column, Integer, String, ForeignKey, JSON, CHAR
+from sqlalchemy import Column, Integer, String, ForeignKey, JSON
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import relationship
 import uuid

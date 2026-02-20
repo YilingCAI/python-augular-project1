@@ -12,10 +12,9 @@ Features:
 
 import logging
 import sys
-import json
 import os
 from datetime import datetime
-from typing import Optional, Dict, Any
+from typing import Dict, Any
 from logging.handlers import RotatingFileHandler
 from pythonjsonlogger import jsonlogger
 from app.core.config import settings
@@ -88,7 +87,7 @@ class HumanReadableFormatter(logging.Formatter):
             
             log_format = (
                 f"%(asctime)s - {color}[%(levelname)s]{reset} - "
-                f"%(name)s:%(lineno)d - %(message)s"
+                "%(name)s:%(lineno)d - %(message)s"
             )
         
         formatter = logging.Formatter(log_format, datefmt="%Y-%m-%d %H:%M:%S")
@@ -132,7 +131,7 @@ def setup_logging() -> logging.Logger:
     
     # Log startup info
     root_logger.info(
-        f"Logging initialized",
+        "Logging initialized",
         extra={
             "environment": settings.ENVIRONMENT,
             "log_level": settings.LOG_LEVEL,
