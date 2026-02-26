@@ -26,10 +26,8 @@ from app.api import users, health, game
 # Load environment variables in order of precedence:
 # 1. System environment variables (already set)
 # 2. config/.env.dev (development) or config/.env.test (testing)
-# 3. config/.env.local (local overrides)
 env_files = [
-    Path(__file__).parent.parent / "config" / ".env.dev",
-    Path(__file__).parent.parent / "config" / ".env.local",
+    Path(__file__).parent.parent / "config" / ".env.dev"
 ]
 for env_path in env_files:
     if env_path.exists():

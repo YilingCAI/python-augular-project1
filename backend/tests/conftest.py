@@ -8,10 +8,11 @@ Imports fixtures from dedicated modules:
 - tests/fixtures/settings.py: Test configuration
 """
 
-import pytest
 import os
 import sys
 from pathlib import Path
+
+import pytest
 from dotenv import load_dotenv
 
 # Ensure project root (/app) is on sys.path so `import app` works under pytest
@@ -24,10 +25,15 @@ if "/app" not in sys.path:
     sys.path.insert(0, "/app")
 
 # Load test environment variables before any app imports
-# Priority: config/.env.test (test-specific) -> config/.env.local (local overrides)
+# Priority: config/.env.test (test-specific overrides, e.g. DATABASE_HOST=localhost)
+#           then config/.env.dev as fallback for any remaining unset vars.
+# .env.dev uses DATABASE_HOST=postgres (Docker service name) which is only
+# reachable inside the Docker network, NOT from the local host running pytest.
+# .env.test overrides that with DATABASE_HOST=localhost for local test runs.
+config_dir = Path(__file__).parent.parent.parent / "config"
 test_env_files = [
-    Path(__file__).parent.parent.parent / "config" / ".env.test",
-    Path(__file__).parent.parent.parent / "config" / ".env.local",
+    config_dir / ".env.dev",   # load first (lower priority)
+    config_dir / ".env.test",  # load second with override=True (higher priority)
 ]
 for env_path in test_env_files:
     if env_path.exists():
@@ -36,18 +42,11 @@ for env_path in test_env_files:
     else:
         print(f"⚠ {env_path} not found, skipping")
 
+from tests.fixtures.auth import (authenticated_client, created_user,
+                                 test_user_data, user_token)
+from tests.fixtures.client import client_with_db, override_get_db
 # Import all fixtures
-from tests.fixtures.db import test_engine, db_session
-from tests.fixtures.client import (
-    override_get_db,
-    client_with_db
-)
-from tests.fixtures.auth import (
-    test_user_data,
-    created_user,
-    user_token,
-    authenticated_client,
-)
+from tests.fixtures.db import db_session, test_engine
 from tests.fixtures.settings import get_test_database_url, get_test_jwt_secret
 
 

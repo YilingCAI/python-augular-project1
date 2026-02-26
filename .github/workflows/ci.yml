@@ -1,42 +1,86 @@
+###############################################################################
+# CI — Continuous Integration Gate
+###############################################################################
+# Responsibilities:
+#   • Conventional commit linting (PRs only)
+#   • Backend lint + unit/integration tests
+#   • Frontend lint + type-check + build
+#   • Dependency vulnerability audit (Snyk)
+#   • Secret scanning (GitGuardian)
+#   • Filesystem vulnerability scan (Trivy)
+#   • Terraform fmt + validate + plan  ← plan ONLY, never apply
+#   • quality-gate job required by branch protection rules
+#
+# NO deployment logic lives here.
+#
+# Triggers:
+#   • pull_request → main, develop
+#   • push         → develop, main  (post-merge validation)
+#   • workflow_dispatch
+###############################################################################
 name: CI
 
 on:
     push:
-        branches: ["test"]
+        branches: [main, develop]
         paths-ignore:
             - "docs/**"
+            - "CHANGELOG.md"
             - "**/*.md"
-            - "*.md"
-            - "config/*.md"
     pull_request:
-        branches: ["main", "develop", "staging"]
+        branches: [main, develop]
         types: [opened, synchronize, reopened]
         paths-ignore:
             - "docs/**"
+            - "CHANGELOG.md"
             - "**/*.md"
-            - "*.md"
-            - "config/*.md"
-
     workflow_dispatch:
 
 permissions:
     contents: read
+    pull-requests: write
     security-events: write
     checks: write
-    pull-requests: write
 
+# Cancel superseded PR runs; never cancel post-merge runs
 concurrency:
     group: ci-${{ github.ref }}
-    cancel-in-progress: true
-
-env:
-    REGISTRY: ghcr.io
-    AWS_REGION: us-east-1
-    TF_VERSION: 1.5.0
+    cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
+    # =========================================================================
+    # 1. CONVENTIONAL COMMIT LINTING  (PR only)
+    # =========================================================================
+    commitlint:
+        name: Commitlint
+        runs-on: ubuntu-latest
+        timeout-minutes: 5
+        if: github.event_name == 'pull_request'
+        steps:
+            - uses: actions/checkout@v4
+              with:
+                  fetch-depth: 0
+
+            - uses: actions/setup-node@v4
+              with:
+                  node-version: "20"
+                  cache: "npm"
+
+            - name: Install commitlint
+              run: npm ci --ignore-scripts
+
+            - name: Lint PR commits (base → head)
+              run: |
+                  npx commitlint \
+                    --from ${{ github.event.pull_request.base.sha }} \
+                    --to   ${{ github.event.pull_request.head.sha }} \
+                    --verbose
+
+    # =========================================================================
+    # 2. PATH CHANGE DETECTION
+    # =========================================================================
     changes:
-        name: Detect Changed Paths
+        name: Detect Changes
         runs-on: ubuntu-latest
         timeout-minutes: 3
         outputs:
@@ -47,8 +91,7 @@ jobs:
         steps:
             - uses: actions/checkout@v4
 
-            - name: Filter changed paths
-              id: filter
+            - id: filter
               uses: dorny/paths-filter@v3
               with:
                   filters: |
@@ -60,102 +103,67 @@ jobs:
                           - 'infra/**'
                       ci:
                           - '.github/**'
+                          - 'package.json'
+                          - '.commitlintrc.yml'
 
-    security-scan:
-        name: Security Scanning
-        runs-on: ubuntu-latest
-        timeout-minutes: 15
-        outputs:
-            gitguardian-outcome: ${{ steps.gitguardian.outcome }}
-        steps:
-            - uses: actions/checkout@v4
-              with:
-                  fetch-depth: 0
-
-            - name: Run Trivy vulnerability scanner
-              uses: aquasecurity/trivy-action@master
-              with:
-                  scan-type: "fs"
-                  scan-ref: "."
-                  format: "sarif"
-                  output: "trivy-results.sarif"
-                  severity: "CRITICAL,HIGH"
-
-            - name: Upload Trivy results to GitHub Security
-              uses: github/codeql-action/upload-sarif@v3
-              with:
-                  sarif_file: "trivy-results.sarif"
-                  category: "trivy"
-
-            # - name: Run Checkov for IaC scanning
-            #   uses: bridgecrewio/checkov-action@master
-            #   with:
-            #       directory: "infra"
-            #       framework: terraform
-            #       output_format: sarif
-            #       output_file_path: "checkov-results.sarif"
-            #       quiet: true
-            #       compact: true
-
-            # - name: Upload Checkov results
-            #   uses: github/codeql-action/upload-sarif@v3
-            #   with:
-            #       sarif_file: "checkov-results.sarif"
-            #       category: "checkov"
-
-            - name: Run secret scanning with GitGuardian
-              id: gitguardian
-              uses: gitguardian/ggshield-action@master
-              env:
-                  GITGUARDIAN_API_KEY: ${{ secrets.GITGUARDIAN_API_KEY }}
-              continue-on-error: true
-
-    backend:
-        name: Backend Tests
+    # =========================================================================
+    # 3. BACKEND — Lint + Tests
+    # =========================================================================
+    backend-ci:
+        name: Backend CI
         runs-on: ubuntu-latest
         timeout-minutes: 20
-        needs: [changes, security-scan]
+        needs: [changes]
         if: |
             needs.changes.outputs.backend == 'true' ||
-            needs.changes.outputs.ci == 'true' ||
+            needs.changes.outputs.ci == 'true'      ||
             github.event_name == 'workflow_dispatch'
+        # Job-level env is evaluated before service containers start,
+        # so these vars are available to the postgres service block below.
+        # Values must be set as GitHub Actions Repository Variables (Settings →
+        # Secrets and variables → Variables) to match config/.env.test.
+        # Reference: config/.env.test — DATABASE_USER / DATABASE_PASSWORD / DATABASE_NAME / DATABASE_PORT
+        env:
+            POSTGRES_USER:     ${{ vars.DATABASE_USER }}
+            POSTGRES_PASSWORD: ${{ vars.DATABASE_PASSWORD }}
+            POSTGRES_DB:       ${{ vars.DATABASE_NAME }}
+            POSTGRES_PORT:     ${{ vars.DATABASE_PORT }}
         services:
             postgres:
                 image: postgres:16-alpine
                 env:
-                    POSTGRES_USER: postgres
-                    POSTGRES_PASSWORD: postgres
-                    POSTGRES_DB: testdb
+                    POSTGRES_USER:     ${{ env.POSTGRES_USER }}
+                    POSTGRES_PASSWORD: ${{ env.POSTGRES_PASSWORD }}
+                    POSTGRES_DB:       ${{ env.POSTGRES_DB }}
                 options: >-
                     --health-cmd pg_isready
                     --health-interval 10s
                     --health-timeout 5s
                     --health-retries 5
                 ports:
-                    - 5432:5432
+                    - ${{ env.POSTGRES_PORT }}:5432
 
         steps:
             - uses: actions/checkout@v4
 
-            - name: Setup Python
-              uses: actions/setup-python@v6
+            - name: Load test environment
+              # Non-secret app vars (DATABASE_*, JWT_ALGORITHM, etc.) and
+              # CI tooling vars (TF_VERSION, REGISTRY) from config/.env.test
+              run: |
+                  grep -v '^\s*#' config/.env.test | grep -v '^\s*$' >> $GITHUB_ENV
+
+            - uses: actions/setup-python@v5
               with:
                   python-version: "3.12"
 
-            - name: Generate Poetry cache key
-              id: poetry-cache
-              run: |
-                  echo "cache-key=poetry-${{ hashFiles('backend/poetry.lock') }}" >> $GITHUB_OUTPUT
-
-            - name: Cache Poetry dependencies
+            - name: Cache Poetry
               uses: actions/cache@v4
               with:
                   path: |
                       ~/.cache/pypoetry
                       ~/.virtualenvs
-                  key: ${{ steps.poetry-cache.outputs.cache-key }}
-                  restore-keys: |
-                      poetry-
+                  key: poetry-${{ hashFiles('backend/poetry.lock') }}
+                  restore-keys: poetry-
 
             - name: Install dependencies
               working-directory: backend
@@ -166,77 +174,35 @@ jobs:
                   poetry config virtualenvs.create false
                   poetry install --no-root
 
-            - name: Run Ruff linter
+            - name: Ruff lint
               working-directory: backend
               run: |
                   poetry run ruff check app/ --output-format=github
                   poetry run ruff format app/ --check
 
-            # - name: Run Bandit security checks
-            #   working-directory: backend
-            #   run: |
-            #       poetry add bandit
-            #       poetry run bandit -r app/ -f json -o bandit-report.json
-            #   continue-on-error: true
-
-            # - name: Upload Bandit results
-            #   if: always()
-            #   uses: github/codeql-action/upload-sarif@v3
-            #   with:
-            #       sarif_file: "backend/bandit-report.json"
-            #       category: "bandit"
-            #   continue-on-error: true
-
-            - name: Run pytest with coverage
+            - name: Unit tests
               working-directory: backend
               timeout-minutes: 10
-              env:
-                  DATABASE_USER: postgres
-                  DATABASE_PASSWORD: postgres
-                  DATABASE_HOST: localhost
-                  DATABASE_PORT: 5432
-                  DATABASE_NAME: testdb
-                  JWT_SECRET_KEY: test-secret-key-for-ci
-                  JWT_ALGORITHM: HS256
-                  JWT_EXPIRE_MINUTES: 60
-                  ENVIRONMENT: test
               run: |
                   pytest tests/unit -m unit -v \
-                    --cov=app \
-                    --cov-report=xml \
-                    --cov-report=html \
+                    --cov=app --cov-report=xml --cov-report=html \
                     --junitxml=test-results-unit.xml \
-                    --maxfail=5 \
-                    --tb=short
+                    --maxfail=5 --tb=short
 
-            - name: Run integration tests
+            - name: Integration tests
               working-directory: backend
               timeout-minutes: 10
-              env:
-                  DATABASE_USER: postgres
-                  DATABASE_PASSWORD: postgres
-                  DATABASE_HOST: localhost
-                  DATABASE_PORT: 5432
-                  DATABASE_NAME: testdb
-                  JWT_SECRET_KEY: test-secret-key-for-ci
-                  JWT_ALGORITHM: HS256
-                  JWT_EXPIRE_MINUTES: 60
-                  ENVIRONMENT: test
               run: |
                   pytest tests/integration -m integration -v \
-                    --cov=app \
-                    --cov-report=xml \
-                    --cov-report=html \
+                    --cov=app --cov-report=xml --cov-report=html \
                     --junitxml=test-results-integration.xml \
-                    --maxfail=5 \
-                    --tb=short
+                    --maxfail=5 --tb=short
 
-            - name: Upload coverage to Codecov
-              uses: codecov/codecov-action@v3
+            - name: Upload coverage
+              uses: codecov/codecov-action@v4
               with:
                   files: ./backend/coverage.xml
                   flags: backend
-                  name: backend-coverage
                   fail_ci_if_error: false
 
             - name: Publish test results
@@ -248,35 +214,24 @@ jobs:
                       backend/test-results-integration.xml
                   check_name: Backend Test Results
 
-    frontend:
-        name: Frontend Tests
+    # =========================================================================
+    # 4. FRONTEND — Lint + Type-check + Build
+    # =========================================================================
+    frontend-ci:
+        name: Frontend CI
         runs-on: ubuntu-latest
         timeout-minutes: 20
-        needs: [changes, security-scan]
+        needs: [changes]
         if: |
             needs.changes.outputs.frontend == 'true' ||
-            needs.changes.outputs.ci == 'true' ||
+            needs.changes.outputs.ci == 'true'       ||
             github.event_name == 'workflow_dispatch'
         outputs:
             eslint-outcome: ${{ steps.eslint.outcome }}
         steps:
             - uses: actions/checkout@v4
 
-            - name: Generate NPM cache key
-              id: npm-cache
-              run: |
-                  echo "cache-key=npm-${{ hashFiles('frontend/package-lock.json') }}" >> $GITHUB_OUTPUT
-
-            - name: Cache NPM dependencies
-              uses: actions/cache@v4
-              with:
-                  path: ~/.npm
-                  key: ${{ steps.npm-cache.outputs.cache-key }}
-                  restore-keys: |
-                      npm-
-
-            - name: Setup Node.js
-              uses: actions/setup-node@v4
+            - uses: actions/setup-node@v4
               with:
                   node-version: "20"
                   cache: "npm"
@@ -285,92 +240,75 @@ jobs:
             - name: Install dependencies
               working-directory: frontend
               timeout-minutes: 8
-              run: npm install && npm ci --prefer-offline --no-audit
+              run: npm ci --prefer-offline --no-audit
 
-            - name: Run ESLint
+            - name: ESLint
               id: eslint
               working-directory: frontend
               run: npm run lint
-              continue-on-error: true
+              continue-on-error: true # logged in quality-gate, not a hard failure here
 
-            - name: Run TypeScript type-check
+            - name: TypeScript type-check
               working-directory: frontend
               run: npm run type-check
 
-            # - name: Run unit tests with coverage
-            #   working-directory: frontend
-            #   timeout-minutes: 10
-            #   run: ng test --watch=false --browsers=ChromeHeadlessCI --code-coverage
-
-            # - name: Upload coverage to Codecov
-            #   uses: codecov/codecov-action@v3
-            #   with:
-            #       files: ./frontend/coverage/coverage-final.json
-            #       flags: frontend
-            #       name: frontend-coverage
-            #       fail_ci_if_error: false
-
-            - name: Build frontend
+            - name: Build
               working-directory: frontend
               run: npm run build
 
-            - name: Store build artifacts
-              uses: actions/upload-artifact@v6
+            - name: Upload build artifact
+              uses: actions/upload-artifact@v4
               with:
-                  name: frontend-build
+                  name: frontend-build-${{ github.sha }}
                   path: frontend/dist/
                   retention-days: 1
 
-    terraform-validate:
-        name: Terraform Validation
+    # =========================================================================
+    # 5. SECURITY — Filesystem + Secret scanning
+    # =========================================================================
+    security-scan:
+        name: Security Scan
         runs-on: ubuntu-latest
-        timeout-minutes: 10
-        needs: [changes, security-scan]
-        if: |
-            needs.changes.outputs.infra == 'true' ||
-            needs.changes.outputs.ci == 'true' ||
-            github.event_name == 'workflow_dispatch'
+        timeout-minutes: 15
+        outputs:
+            gitguardian-outcome: ${{ steps.gitguardian.outcome }}
         steps:
             - uses: actions/checkout@v4
-
-            - name: Generate Terraform cache key
-              id: tf-cache
-              run: |
-                  echo "cache-key=terraform-${{ hashFiles('infra/**/*.tf', 'infra/.terraform.lock.hcl') }}" >> $GITHUB_OUTPUT
-
-            - name: Cache Terraform
-              uses: actions/cache@v4
               with:
-                  path: infra/.terraform
-                  key: ${{ steps.tf-cache.outputs.cache-key }}
-                  restore-keys: |
-                      terraform-
+                  fetch-depth: 0
 
-            - name: Setup Terraform
-              uses: hashicorp/setup-terraform@v2
+            - name: Trivy filesystem scan
+              uses: aquasecurity/trivy-action@master
               with:
-                  terraform_version: 1.5.0
+                  scan-type: "fs"
+                  scan-ref: "."
+                  format: "sarif"
+                  output: "trivy-fs.sarif"
+                  severity: "CRITICAL,HIGH"
 
-            - name: Terraform fmt check
-              working-directory: infra
-              run: terraform fmt -check -recursive
+            - name: Upload Trivy SARIF
+              uses: github/codeql-action/upload-sarif@v3
+              with:
+                  sarif_file: "trivy-fs.sarif"
+                  category: "trivy-filesystem"
 
-            - name: Terraform init
-              working-directory: infra
-              timeout-minutes: 5
-              run: terraform init -backend=false
+            - name: GitGuardian secret scan
+              id: gitguardian
+              uses: gitguardian/ggshield-action@master
+              env:
+                  GITGUARDIAN_API_KEY: ${{ secrets.GITGUARDIAN_API_KEY }}
+              continue-on-error: true
 
-            - name: Terraform validate
-              working-directory: infra
-              run: terraform validate
-
-    dependency-check:
-        name: Dependency Analysis
+    # =========================================================================
+    # 6. DEPENDENCY AUDIT (Snyk)
+    # =========================================================================
+    dependency-audit:
+        name: Dependency Audit
         runs-on: ubuntu-latest
         timeout-minutes: 10
         needs: [changes]
         if: |
-            needs.changes.outputs.backend == 'true' ||
+            needs.changes.outputs.backend  == 'true' ||
             needs.changes.outputs.frontend == 'true' ||
             github.event_name == 'workflow_dispatch'
         outputs:
@@ -379,7 +317,7 @@ jobs:
         steps:
             - uses: actions/checkout@v4
 
-            - name: Check dependencies with Snyk (Python)
+            - name: Snyk Python
               id: snyk-python
               uses: snyk/actions/python-3.12@master
               env:
@@ -388,7 +326,7 @@ jobs:
                   args: backend --severity-threshold=high
               continue-on-error: true
 
-            - name: Check dependencies with Snyk (Node)
+            - name: Snyk Node.js
               id: snyk-node
               uses: snyk/actions/node@master
               env:
@@ -397,196 +335,133 @@ jobs:
                   args: frontend --severity-threshold=high
               continue-on-error: true
 
-    build-backend:
-        name: Build Backend Image
+    # =========================================================================
+    # 7. TERRAFORM PLAN  ← PR only, NEVER applies
+    # =========================================================================
+    terraform-plan:
+        name: Terraform Plan (${{ matrix.environment }})
         runs-on: ubuntu-latest
-        timeout-minutes: 20
-        needs: [changes, backend, terraform-validate]
+        timeout-minutes: 15
+        needs: [changes]
         if: |
-            github.event_name == 'push' &&
-            (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/test' || github.ref == 'refs/heads/develop' || github.ref == 'refs/heads/staging') &&
-            (needs.changes.outputs.backend == 'true' || needs.changes.outputs.ci == 'true' || needs.changes.outputs.infra == 'true')
+            (needs.changes.outputs.infra == 'true' || needs.changes.outputs.ci == 'true') &&
+            github.event_name == 'pull_request'
+        strategy:
+            matrix:
+                environment: [staging, prod]
+            max-parallel: 1
+            fail-fast: false
         permissions:
             contents: read
-            packages: write
-        outputs:
-            image-uri: ${{ steps.build.outputs.image-uri }}
-            image-digest: ${{ steps.build.outputs.image-digest }}
+            pull-requests: write
+            id-token: write
         steps:
             - uses: actions/checkout@v4
 
-            - name: Build and scan backend image
-              id: build
-              uses: ./.github/actions/docker-build
-              with:
-                  context: backend
-                  dockerfile: backend/Dockerfile
-                  image-name: ${{ github.repository }}/backend
-                  registry: ${{ env.REGISTRY }}
-                  registry-username: ${{ github.actor }}
-                  registry-password: ${{ secrets.GITHUB_TOKEN }}
-                  push: true
-                  scan: true
-                  cache: true
-                  cache-key-files: backend/poetry.lock
+            - name: Load CI environment
+              run: |
+                  grep -v '^\s*#' config/.env.test | grep -v '^\s*$' >> $GITHUB_ENV
 
-            - name: Comment PR with image info
-              if: github.event_name == 'pull_request'
+            - uses: hashicorp/setup-terraform@v3
+              with:
+                  terraform_version: ${{ env.TF_VERSION }}
+
+            - name: Configure AWS credentials
+              uses: aws-actions/configure-aws-credentials@v4
+              with:
+                  role-to-assume: ${{ secrets.AWS_ROLE_TO_ASSUME }}
+                  aws-region: ${{ env.AWS_REGION }}
+
+            - name: Terraform fmt check
+              working-directory: infra
+              run: terraform fmt -check -recursive
+
+            - name: Terraform init (no remote state — validation only)
+              working-directory: infra
+              run: terraform init -backend=false
+
+            - name: Terraform validate
+              working-directory: infra
+              run: terraform validate
+
+            - name: Terraform plan
+              id: plan
+              working-directory: infra
+              env:
+                  TF_VAR_environment: ${{ matrix.environment }}
+                  TF_VAR_aws_region: ${{ env.AWS_REGION }}
+              run: |
+                  terraform plan \
+                    -var-file="envs/${{ matrix.environment }}.tfvars" \
+                    -no-color 2>&1 | tee plan-output.txt
+
+            - name: Post plan to PR
               uses: actions/github-script@v7
               with:
                   script: |
+                      const fs   = require('fs');
+                      const plan = fs.readFileSync('infra/plan-output.txt', 'utf8').substring(0, 65000);
                       github.rest.issues.createComment({
                         issue_number: context.issue.number,
-                        owner: context.repo.owner,
-                        repo: context.repo.repo,
-                        body: `✅ Backend image built successfully\n\n**Image URI:** \`${{ steps.build.outputs.image-uri }}\`\n**Digest:** \`${{ steps.build.outputs.image-digest }}\``
-                      })
+                        owner: context.repo.owner, repo: context.repo.repo,
+                        body: `## 🔍 Terraform Plan — \`${{ matrix.environment }}\`\n\`\`\`hcl\n${plan}\n\`\`\``
+                      });
 
-    build-frontend:
-        name: Build Frontend Image
-        runs-on: ubuntu-latest
-        timeout-minutes: 20
-        needs: [changes, frontend, terraform-validate]
-        if: |
-            github.event_name == 'push' &&
-            (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/test' || github.ref == 'refs/heads/develop' || github.ref == 'refs/heads/staging') &&
-            (needs.changes.outputs.frontend == 'true' || needs.changes.outputs.ci == 'true' || needs.changes.outputs.infra == 'true')
-        permissions:
-            contents: read
-            packages: write
-        outputs:
-            image-uri: ${{ steps.build.outputs.image-uri }}
-            image-digest: ${{ steps.build.outputs.image-digest }}
-        steps:
-            - uses: actions/checkout@v4
-
-            - name: Build and scan frontend image
-              id: build
-              uses: ./.github/actions/docker-build
-              with:
-                  context: frontend
-                  dockerfile: frontend/Dockerfile
-                  image-name: ${{ github.repository }}/frontend
-                  registry: ${{ env.REGISTRY }}
-                  registry-username: ${{ github.actor }}
-                  registry-password: ${{ secrets.GITHUB_TOKEN }}
-                  push: true
-                  scan: true
-                  cache: true
-                  cache-key-files: frontend/package-lock.json
-
-            - name: Comment PR with image info
-              if: github.event_name == 'pull_request'
-              uses: actions/github-script@v7
-              with:
-                  script: |
-                      github.rest.issues.createComment({
-                        issue_number: context.issue.number,
-                        owner: context.repo.owner,
-                        repo: context.repo.repo,
-                        body: `✅ Frontend image built successfully\n\n**Image URI:** \`${{ steps.build.outputs.image-uri }}\`\n**Digest:** \`${{ steps.build.outputs.image-digest }}\``
-                      })
-
-    notify-status:
-        name: Notify CI Status
+    # =========================================================================
+    # 8. QUALITY GATE — single status required by branch protection
+    # =========================================================================
+    quality-gate:
+        name: Quality Gate
         runs-on: ubuntu-latest
         timeout-minutes: 5
         if: always()
         needs:
-            [
-                changes,
-                security-scan,
-                backend,
-                frontend,
-                terraform-validate,
-                dependency-check,
-                build-backend,
-                build-frontend,
-            ]
+            - commitlint
+            - backend-ci
+            - frontend-ci
+            - security-scan
+            - dependency-audit
+            - terraform-plan
         steps:
-            - name: Write CI summary
+            - name: Evaluate gate
               run: |
-                  # Helper: map result to emoji
-                  status_icon() {
-                    case "$1" in
-                      success)  echo "✅" ;;
-                      failure)  echo "❌" ;;
-                      cancelled) echo "🚫" ;;
-                      skipped)  echo "⏭️" ;;
-                      *)        echo "❓" ;;
-                    esac
-                  }
+                  CL="${{ needs.commitlint.result }}"
+                  BE="${{ needs.backend-ci.result }}"
+                  FE="${{ needs.frontend-ci.result }}"
+                  TF="${{ needs.terraform-plan.result }}"
 
-                  # Job results
-                  SEC="${{ needs.security-scan.result }}"
-                  BACK="${{ needs.backend.result }}"
-                  FRONT="${{ needs.frontend.result }}"
-                  TF="${{ needs.terraform-validate.result }}"
-                  DEP="${{ needs.dependency-check.result }}"
-                  BUILD_BACK="${{ needs.build-backend.result }}"
-                  BUILD_FRONT="${{ needs.build-frontend.result }}"
+                  echo "commitlint:  $CL"
+                  echo "backend-ci:  $BE"
+                  echo "frontend-ci: $FE"
+                  echo "tf-plan:     $TF"
 
-                  # Soft-check outcomes (continue-on-error steps) passed via env
-                  GG="${{ needs.security-scan.outputs.gitguardian-outcome }}"
-                  ESLINT="${{ needs.frontend.outputs.eslint-outcome }}"
-                  SNYK_PY="${{ needs.dependency-check.outputs.snyk-python-outcome }}"
-                  SNYK_NODE="${{ needs.dependency-check.outputs.snyk-node-outcome }}"
-
-                  # Determine overall hard-failure
-                  HARD_FAIL=false
-                  for r in "$BACK" "$FRONT" "$TF"; do
-                    [[ "$r" == "failure" ]] && HARD_FAIL=true
+                  # Hard failures — must pass
+                  for r in "$BE" "$FE"; do
+                    [[ "$r" == "failure" ]] && { echo "❌ Required job failed"; exit 1; }
                   done
 
-                  # Determine if any soft check silently failed
-                  SOFT_WARN=false
-                  for r in "$SEC" "$DEP"; do
-                    [[ "$r" == "failure" ]] && SOFT_WARN=true
-                  done
+                  # Commitlint fails only on PRs (skipped on push)
+                  [[ "$CL" == "failure" ]] && { echo "❌ Commitlint failed"; exit 1; }
 
-                  # Write Job Summary
+                  # Terraform plan failure blocks PRs when infra changed
+                  [[ "$TF" == "failure" ]] && { echo "❌ Terraform plan failed"; exit 1; }
+
+                  echo "✅ All gates passed"
+
+            - name: Write step summary
+              if: always()
+              run: |
+                  icon() { case "$1" in success) echo "✅";; failure) echo "❌";; skipped) echo "⏭️";; cancelled) echo "🚫";; *) echo "🔶";; esac; }
                   {
-                    echo "## CI Pipeline Summary"
-                    echo ""
-                    if [[ "$HARD_FAIL" == "true" ]]; then
-                      echo "> ❌ **Pipeline FAILED** — one or more required jobs did not pass."
-                    elif [[ "$SOFT_WARN" == "true" ]]; then
-                      echo "> ⚠️ **Pipeline passed with warnings** — optional checks reported issues."
-                    else
-                      echo "> ✅ **Pipeline passed successfully.**"
-                    fi
-                    echo ""
-                    echo "### Required Jobs"
-                    echo "| Job | Result |"
+                    echo "## CI Quality Gate"
+                    echo "| Job | Status |"
                     echo "|-----|--------|"
-                    echo "| Backend Tests         | $(status_icon $BACK) \`$BACK\` |"
-                    echo "| Frontend Tests        | $(status_icon $FRONT) \`$FRONT\` |"
-                    echo "| Terraform Validate    | $(status_icon $TF) \`$TF\` |"
-                    echo "| Build Backend Image   | $(status_icon $BUILD_BACK) \`$BUILD_BACK\` |"
-                    echo "| Build Frontend Image  | $(status_icon $BUILD_FRONT) \`$BUILD_FRONT\` |"
+                    echo "| Commitlint       | $(icon ${{ needs.commitlint.result }}) \`${{ needs.commitlint.result }}\` |"
+                    echo "| Backend CI       | $(icon ${{ needs.backend-ci.result }}) \`${{ needs.backend-ci.result }}\` |"
+                    echo "| Frontend CI      | $(icon ${{ needs.frontend-ci.result }}) \`${{ needs.frontend-ci.result }}\` |"
+                    echo "| Security Scan    | $(icon ${{ needs.security-scan.result }}) \`${{ needs.security-scan.result }}\` |"
+                    echo "| Dependency Audit | $(icon ${{ needs.dependency-audit.result }}) \`${{ needs.dependency-audit.result }}\` |"
+                    echo "| Terraform Plan   | $(icon ${{ needs.terraform-plan.result }}) \`${{ needs.terraform-plan.result }}\` |"
                     echo ""
-                    echo "### Optional Checks (failures do not block the pipeline)"
-                    echo "| Check | Job Result | Step Outcome |"
-                    echo "|-------|-----------|----------|"
-                    echo "| Security Scan         | $(status_icon $SEC) \`$SEC\` | — |"
-                    echo "| Dependency Analysis   | $(status_icon $DEP) \`$DEP\` | — |"
-                    echo "| GitGuardian (secrets) | — | ${GG:+$(status_icon $GG) \`$GG\`}${GG:-⏭️ not run} |"
-                    echo "| ESLint                | — | ${ESLINT:+$(status_icon $ESLINT) \`$ESLINT\`}${ESLINT:-⏭️ not run} |"
-                    echo "| Snyk Python           | — | ${SNYK_PY:+$(status_icon $SNYK_PY) \`$SNYK_PY\`}${SNYK_PY:-⏭️ not run} |"
-                    echo "| Snyk Node             | — | ${SNYK_NODE:+$(status_icon $SNYK_NODE) \`$SNYK_NODE\`}${SNYK_NODE:-⏭️ not run} |"
-                    echo ""
-                    echo "---"
-                    echo "_Triggered by \`${{ github.event_name }}\` on \`${{ github.ref_name }}\` — commit \`${{ github.sha }}\`_"
+                    echo "_\`${{ github.event_name }}\` on \`${{ github.ref_name }}\` — \`${{ github.sha }}\`_"
                   } >> $GITHUB_STEP_SUMMARY
-
-            - name: Fail pipeline if required jobs failed
-              if: |
-                  needs.backend.result == 'failure' ||
-                  needs.frontend.result == 'failure' ||
-                  needs.terraform-validate.result == 'failure'
-              run: |
-                  echo "Required job(s) failed:"
-                  echo "  backend:            ${{ needs.backend.result }}"
-                  echo "  frontend:           ${{ needs.frontend.result }}"
-                  echo "  terraform-validate: ${{ needs.terraform-validate.result }}"
-                  exit 1

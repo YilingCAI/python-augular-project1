@@ -38,6 +38,9 @@ COPY --from=builder /usr/local/bin /usr/local/bin
 COPY app ./app
 COPY alembic ./alembic
 COPY alembic.ini .
+COPY main.py .
+COPY start.sh .
+RUN chmod +x start.sh
 
 # Change ownership to non-root user
 RUN chown -R appuser:appuser /app
@@ -52,5 +55,5 @@ HEALTHCHECK --interval=30s --timeout=10s --start-period=40s --retries=3 \
 # Expose port
 EXPOSE 8000
 
-# Run application
-CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]
+# Run migrations then start the application
+CMD ["./start.sh"]
