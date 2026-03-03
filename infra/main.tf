@@ -23,12 +23,17 @@ terraform {
   #     -backend-config="bucket=$TERRAFORM_STATE_BUCKET" \
   #     -backend-config="key=<environment>/terraform.tfstate" \
   #     -backend-config="region=$AWS_REGION" \
-  #     -backend-config="dynamodb_table=$TERRAFORM_LOCK_TABLE"
+  #     -backend-config="use_lockfile=true"
   #
   # Local development: run `terraform init -backend=false` to skip remote state.
   backend "s3" {
     encrypt = true
   }
+}
+
+locals {
+  frontend_ecr_repository_url = var.frontend_ecr_repository_url != "" ? var.frontend_ecr_repository_url : replace(var.ecr_repository_url, "/backend", "/frontend")
+  frontend_image_tag          = var.frontend_image_tag != "" ? var.frontend_image_tag : var.image_tag
 }
 
 # Networking Module
@@ -42,6 +47,7 @@ module "network" {
   private_subnet_cidrs  = var.private_subnet_cidrs
   database_subnet_cidrs = var.database_subnet_cidrs
   app_port              = var.app_port
+  frontend_port         = var.frontend_port
 }
 
 # RDS Module
@@ -60,6 +66,7 @@ module "rds" {
   backup_retention_days    = var.backup_retention_days
   multi_az                 = var.multi_az
   log_retention_days       = var.log_retention_days
+  enable_secret_rotation   = var.enable_secret_rotation
 }
 
 # ALB Module
@@ -71,6 +78,7 @@ module "alb" {
   public_subnet_ids     = module.network.public_subnet_ids
   alb_security_group_id = module.network.alb_security_group_id
   app_port              = var.app_port
+  frontend_port         = var.frontend_port
   health_check_path     = var.health_check_path
   certificate_arn       = var.certificate_arn
 }
@@ -88,6 +96,7 @@ resource "aws_secretsmanager_secret" "jwt_secret" {
 
 # Enable automatic rotation for JWT secret
 resource "aws_secretsmanager_secret_rotation" "jwt_secret" {
+  count     = var.enable_secret_rotation ? 1 : 0
   secret_id = aws_secretsmanager_secret.jwt_secret.id
   rotation_rules {
     automatically_after_days = 30
@@ -190,9 +199,29 @@ module "ecs" {
   db_secret_arn             = module.rds.secret_arn
   jwt_secret_arn            = aws_secretsmanager_secret.jwt_secret.arn
   kms_key_arn               = aws_kms_key.secrets.arn
+  db_kms_key_arn            = module.rds.kms_key_arn
   debug                     = var.debug
   jwt_algorithm             = var.jwt_algorithm
   jwt_expire_minutes        = var.jwt_expire_minutes
+
+  depends_on = [module.alb]
+}
+
+module "ecs_frontend" {
+  source = "./modules/ecs_frontend"
+
+  project_name          = var.project_name
+  aws_region            = var.aws_region
+  cluster_id            = module.ecs.cluster_id
+  ecr_repository_url    = local.frontend_ecr_repository_url
+  image_tag             = local.frontend_image_tag
+  frontend_port         = var.frontend_port
+  desired_count         = var.frontend_desired_count
+  private_subnet_ids    = module.network.private_subnet_ids
+  ecs_security_group_id = module.network.ecs_tasks_security_group_id
+  target_group_arn      = module.alb.frontend_target_group_arn
+
+  depends_on = [module.alb, module.ecs]
 }
 
 # CloudWatch Dashboard for monitoring

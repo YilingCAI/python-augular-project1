@@ -10,6 +10,7 @@ import { Observable } from 'rxjs';
     providedIn: 'root'
 })
 export class ApiClient {
+    private static readonly fallbackBaseUrl = 'http://localhost:8000';
     private baseUrl: string;
 
     constructor(private http: HttpClient) {
@@ -20,7 +21,8 @@ export class ApiClient {
      * Get API base URL from environment
      */
     private getApiBaseUrl(): string {
-        return (window as any)['API_BASE_URL'] || 'http://localhost:8000';
+        const runtimeConfig = window as Window & { API_BASE_URL?: string };
+        return runtimeConfig.API_BASE_URL || ApiClient.fallbackBaseUrl;
     }
 
     /**
@@ -34,7 +36,7 @@ export class ApiClient {
     /**
      * Perform POST request
      */
-    post<T>(endpoint: string, data?: any): Observable<T> {
+    post<T>(endpoint: string, data?: unknown): Observable<T> {
         const url = `${this.baseUrl}${endpoint}`;
         return this.http.post<T>(url, data || {});
     }
@@ -50,7 +52,7 @@ export class ApiClient {
     /**
      * Perform PUT request
      */
-    put<T>(endpoint: string, data?: any): Observable<T> {
+    put<T>(endpoint: string, data?: unknown): Observable<T> {
         const url = `${this.baseUrl}${endpoint}`;
         return this.http.put<T>(url, data || {});
     }

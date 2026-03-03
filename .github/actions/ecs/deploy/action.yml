@@ -1,3 +1,13 @@
+###############################################################################
+# composite action: ecs/deploy
+#
+# Renders a new ECS task definition from a base JSON template with updated
+# image URIs, registers the new task definition, and updates the ECS service
+# to trigger a rolling deployment.
+#
+# Callers:  release.yml (deploy-production job)
+# Inputs:   cluster, service, task-definition, container-name, image
+###############################################################################
 name: "ECS Deploy"
 description: "Deploy updated task definition to ECS Fargate service"
 
@@ -76,7 +86,6 @@ runs:
         service: ${{ inputs.service }}
         cluster: ${{ inputs.cluster }}
         wait-for-service-stability: ${{ inputs.wait-for-stability }}
-        wait-for-service-stability-timeout: ${{ inputs.timeout-seconds }}
 
     - name: Verify deployment
       shell: bash

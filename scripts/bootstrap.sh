@@ -1,6 +1,33 @@
-#!/bin/bash
-# Bootstrap script for production CI/CD setup
-# Run: ./scripts/bootstrap.sh
+#!/usr/bin/env bash
+###############################################################################
+# bootstrap.sh — One-time AWS infrastructure bootstrap
+#
+# Creates every AWS resource required before the first CI/CD run.  Safe to
+# re-run; all steps check for existing resources before creating them.
+#
+# Resources created:
+#   - S3 bucket          Terraform remote state (versioned, AES-256 encrypted,
+#                        public-access blocked)
+#   - DynamoDB table     Terraform state locking  (terraform-locks)
+#   - ECR repositories   mypythonproject1/backend  +  mypythonproject1/frontend
+#   - IAM OIDC provider  token.actions.githubusercontent.com
+#   - IAM role           GitHubActionsRole  (assumed by GitHub Actions via OIDC)
+#   - IAM inline policy  GitHubActionsPolicy  (ECR, ECS, EC2, ALB, S3, ...)
+#
+# After completion the script prints the exact `gh secret set` commands that
+# must be run before workflows will succeed.
+#
+# Usage:
+#   bash scripts/bootstrap.sh
+#   make bootstrap
+#
+# Environment variables:
+#   AWS_REGION   optional — target AWS region  (default: us-east-1)
+#
+# Dependencies:   aws (AWS CLI v2)
+# Optional:       gh (GitHub CLI) for convenience when setting secrets
+# Caller(s):      make bootstrap
+###############################################################################
 
 set -e
 
@@ -28,13 +55,11 @@ if ! command -v aws &> /dev/null; then
 fi
 
 if ! command -v terraform &> /dev/null; then
-  echo -e "${RED}❌ Terraform not found. Install it first.${NC}"
-  exit 1
+  echo -e "${YELLOW}⚠ Terraform not found. Continuing bootstrap (Terraform CLI not required for this script).${NC}"
 fi
 
 if ! command -v gh &> /dev/null; then
-  echo -e "${RED}❌ GitHub CLI not found. Install it first.${NC}"
-  exit 1
+  echo -e "${YELLOW}⚠ GitHub CLI (gh) not found. Continuing; set GitHub secrets manually in repo settings.${NC}"
 fi
 
 echo -e "${GREEN}✓ All prerequisites found${NC}"
@@ -89,7 +114,7 @@ else
     --key-schema AttributeName=LockID,KeyType=HASH \
     --provisioned-throughput ReadCapacityUnits=5,WriteCapacityUnits=5 \
     --region "${AWS_REGION}"
-  
+
   aws dynamodb wait table-exists --table-name "${LOCK_TABLE}"
   echo -e "${GREEN}✓ DynamoDB table created${NC}"
 fi
@@ -105,7 +130,7 @@ for service in backend frontend; do
   else
     aws ecr create-repository \
       --repository-name "${REPO_NAME}" \
-      --encryption-configuration encryptionType=AES \
+      --encryption-configuration encryptionType=AES256 \
       --image-scanning-configuration scanOnPush=true \
       --region "${AWS_REGION}"
     

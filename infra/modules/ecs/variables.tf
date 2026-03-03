@@ -104,6 +104,11 @@ variable "kms_key_arn" {
   type        = string
 }
 
+variable "db_kms_key_arn" {
+  description = "KMS key ARN used to encrypt DB secret"
+  type        = string
+}
+
 variable "debug" {
   description = "Enable debug mode"
   type        = bool

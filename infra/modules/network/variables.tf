@@ -38,3 +38,9 @@ variable "app_port" {
   type        = number
   default     = 8000
 }
+
+variable "frontend_port" {
+  description = "Port for frontend service"
+  type        = number
+  default     = 4200
+}

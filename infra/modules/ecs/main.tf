@@ -21,7 +21,6 @@ resource "aws_kms_key" "ecs_logs" {
 resource "aws_cloudwatch_log_group" "ecs" {
   name              = "/ecs/${var.project_name}"
   retention_in_days = 365
-  kms_key_id        = aws_kms_key.ecs_logs.arn
 
   tags = {
     Name = "${var.project_name}-ecs-logs"
@@ -89,12 +88,22 @@ resource "aws_iam_role_policy" "ecs_task_execution_secrets" {
       {
         Effect = "Allow"
         Action = [
-          "secretsmanager:GetSecretValue",
-          "kms:Decrypt"
+          "secretsmanager:GetSecretValue"
         ]
         Resource = [
           var.db_secret_arn,
-          "${var.kms_key_arn}*"
+          var.jwt_secret_arn
+        ]
+      },
+      {
+        Effect = "Allow"
+        Action = [
+          "kms:Decrypt",
+          "kms:DescribeKey"
+        ]
+        Resource = [
+          var.kms_key_arn,
+          var.db_kms_key_arn
         ]
       }
     ]
@@ -161,6 +170,26 @@ resource "aws_ecs_task_definition" "app" {
         {
           name      = "DATABASE_URL"
           valueFrom = "${var.db_secret_arn}:DATABASE_URL::"
+        },
+        {
+          name      = "DATABASE_USER"
+          valueFrom = "${var.db_secret_arn}:DATABASE_USER::"
+        },
+        {
+          name      = "DATABASE_PASSWORD"
+          valueFrom = "${var.db_secret_arn}:DATABASE_PASSWORD::"
+        },
+        {
+          name      = "DATABASE_HOST"
+          valueFrom = "${var.db_secret_arn}:DATABASE_HOST::"
+        },
+        {
+          name      = "DATABASE_PORT"
+          valueFrom = "${var.db_secret_arn}:DATABASE_PORT::"
+        },
+        {
+          name      = "DATABASE_NAME"
+          valueFrom = "${var.db_secret_arn}:DATABASE_NAME::"
         },
         {
           name      = "JWT_SECRET_KEY"

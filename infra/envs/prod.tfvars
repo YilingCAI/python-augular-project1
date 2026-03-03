@@ -13,7 +13,7 @@ app_port              = 8000
 # RDS
 db_name                  = "gamedb"
 db_username              = "postgres"
-db_engine_version        = "16.1"
+db_engine_version        = "17.6"
 db_instance_class        = "db.t3.medium"
 db_allocated_storage     = 100
 db_max_allocated_storage = 500
@@ -22,9 +22,12 @@ multi_az                 = true
 log_retention_days       = 30
 
 # ECS
+image_tag                 = "latest"
+frontend_image_tag        = "latest"
 task_cpu                  = "1024"
 task_memory               = "2048"
 desired_count             = 3
+frontend_desired_count    = 3
 min_capacity              = 3
 max_capacity              = 10
 target_cpu_utilization    = 60

@@ -1,10 +1,37 @@
-#!/bin/bash
-
-################################################################################
-# setup-env.sh - Environment Configuration Setup
-# Configures environment variables for Terraform and deployment operations
-# Usage: bash scripts/setup-env.sh
-################################################################################
+#!/usr/bin/env bash
+###############################################################################
+# setup-env.sh — Export environment variables for Terraform and deployments
+#
+# Resolves the correct S3 state bucket, DynamoDB lock table, ECR registry,
+# and ECS cluster / service names for the requested environment and exports
+# them into the current process.
+#
+# Important: to propagate exports into your calling shell, source this script
+# rather than executing it in a sub-shell:
+#
+#   source scripts/setup-env.sh          # interactive use
+#   eval "$(ENV=staging bash scripts/setup-env.sh 2>/dev/null)"  # in scripts
+#
+# Usage:
+#   ENV=staging source scripts/setup-env.sh
+#   make setup-env ENV=staging
+#
+# Environment variables:
+#   ENV              REQUIRED — target environment: dev | staging | prod
+#   AWS_REGION       optional — AWS region           (default: us-east-1)
+#   AWS_ACCOUNT_ID   optional — used to build ECR registry URL
+#   TERRAFORM_STATE_BUCKET  optional — override default S3 bucket name
+#   TERRAFORM_LOCK_TABLE    optional — override default DynamoDB table name
+#
+# Exports set by this script:
+#   AWS_REGION, TF_ROOT, TF_VAR_environment, TF_VAR_aws_region,
+#   TERRAFORM_STATE_BUCKET, TERRAFORM_LOCK_TABLE,
+#   ECR_REGISTRY, ECR_REPOSITORY_BACKEND, ECR_REPOSITORY_FRONTEND,
+#   ECS_CLUSTER, ECS_SERVICE_BACKEND, ECS_SERVICE_FRONTEND
+#
+# Dependencies:   bash 4+
+# Caller(s):      make setup-env  /  source before tf-plan, tf-apply, ecs-deploy
+###############################################################################
 
 set -euo pipefail
 
@@ -56,20 +83,16 @@ export TF_VAR_environment="${ENV}"
 export TF_VAR_aws_region="${AWS_REGION}"
 
 # Terraform state backend configuration
-case "$ENV" in
-    staging)
-        TERRAFORM_STATE_BUCKET="${TERRAFORM_STATE_BUCKET:-mypythonproject1-tf-state-staging}"
-        TERRAFORM_LOCK_TABLE="${TERRAFORM_LOCK_TABLE:-terraform-locks-staging}"
-        ;;
-    prod)
-        TERRAFORM_STATE_BUCKET="${TERRAFORM_STATE_BUCKET:-mypythonproject1-tf-state-prod}"
-        TERRAFORM_LOCK_TABLE="${TERRAFORM_LOCK_TABLE:-terraform-locks-prod}"
-        ;;
-    dev)
-        TERRAFORM_STATE_BUCKET="${TERRAFORM_STATE_BUCKET:-mypythonproject1-tf-state-dev}"
-        TERRAFORM_LOCK_TABLE="${TERRAFORM_LOCK_TABLE:-terraform-locks-dev}"
-        ;;
-esac
+if [ -z "${AWS_ACCOUNT_ID:-}" ]; then
+    AWS_ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text 2>/dev/null || true)
+fi
+
+if [ -n "${AWS_ACCOUNT_ID:-}" ]; then
+    TERRAFORM_STATE_BUCKET="${TERRAFORM_STATE_BUCKET:-terraform-state-${AWS_ACCOUNT_ID}}"
+else
+    TERRAFORM_STATE_BUCKET="${TERRAFORM_STATE_BUCKET:-mypythonproject1-tf-state-${ENV}}"
+fi
+TERRAFORM_LOCK_TABLE="${TERRAFORM_LOCK_TABLE:-terraform-locks}"
 
 export TERRAFORM_STATE_BUCKET
 export TERRAFORM_LOCK_TABLE
@@ -85,7 +108,10 @@ echo -e "${GREEN}✓${NC} Terraform Lock Table: $TERRAFORM_LOCK_TABLE"
 # ============================================================================
 
 # ECR Registry
-AWS_ACCOUNT_ID="${AWS_ACCOUNT_ID:-}"
+if [ -z "$AWS_ACCOUNT_ID" ]; then
+    echo -e "${YELLOW}⚠️  AWS_ACCOUNT_ID not detected; ECR registry may be incomplete${NC}"
+fi
+
 ECR_REGISTRY="${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com"
 ECR_REPOSITORY_BACKEND="${ECR_REGISTRY}/mypythonproject1/backend"
 ECR_REPOSITORY_FRONTEND="${ECR_REGISTRY}/mypythonproject1/frontend"

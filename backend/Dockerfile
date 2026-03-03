@@ -1,5 +1,6 @@
 # Multi-stage build for optimized production image
-FROM python:3.12-slim as builder
+ARG PYTHON_VERSION=3.12.1
+FROM python:${PYTHON_VERSION}-slim as builder
 
 WORKDIR /build
 
@@ -18,7 +19,7 @@ RUN pip install --upgrade pip && \
     poetry install --no-interaction --no-ansi --with dev --no-root
 
 # Production stage
-FROM python:3.12-slim
+FROM python:${PYTHON_VERSION}-slim
 
 WORKDIR /app
 

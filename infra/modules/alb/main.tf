@@ -60,6 +60,8 @@ resource "aws_s3_bucket_lifecycle_configuration" "alb_logs" {
     id     = "archive-old-logs"
     status = "Enabled"
 
+    filter {}
+
     transition {
       days          = 90
       storage_class = "GLACIER"
@@ -115,6 +117,20 @@ resource "aws_s3_bucket_policy" "alb_logs" {
         }
         Action   = "s3:PutObject"
         Resource = "${aws_s3_bucket.alb_logs.arn}/*"
+      },
+      {
+        Sid    = "AllowALBLogDelivery"
+        Effect = "Allow"
+        Principal = {
+          Service = "logdelivery.elasticloadbalancing.amazonaws.com"
+        }
+        Action   = "s3:PutObject"
+        Resource = "${aws_s3_bucket.alb_logs.arn}/alb-logs/*"
+        Condition = {
+          StringEquals = {
+            "s3:x-amz-acl" = "bucket-owner-full-control"
+          }
+        }
       }
     ]
   })
@@ -135,7 +151,7 @@ resource "aws_lb" "main" {
 
   access_logs {
     bucket  = aws_s3_bucket.alb_logs.id
-    enabled = true
+    enabled = false
     prefix  = "alb-logs"
   }
 
@@ -177,8 +193,31 @@ resource "aws_lb_target_group" "app" {
   }
 }
 
-# HTTP Listener (redirect to HTTPS)
-resource "aws_lb_listener" "http" {
+resource "aws_lb_target_group" "frontend" {
+  name_prefix          = "fe-"
+  port                 = var.frontend_port
+  protocol             = "HTTP"
+  vpc_id               = var.vpc_id
+  target_type          = "ip"
+  deregistration_delay = 30
+
+  health_check {
+    healthy_threshold   = 2
+    unhealthy_threshold = 3
+    timeout             = 5
+    interval            = 30
+    path                = "/"
+    matcher             = "200-399"
+  }
+
+  tags = {
+    Name = "${var.project_name}-frontend-tg"
+  }
+}
+
+# HTTP Listener (redirect to HTTPS when certificate exists)
+resource "aws_lb_listener" "http_redirect" {
+  count             = var.certificate_arn != "" ? 1 : 0
   load_balancer_arn = aws_lb.main.arn
   port              = 80
   protocol          = "HTTP"
@@ -194,6 +233,53 @@ resource "aws_lb_listener" "http" {
   }
 }
 
+# HTTP Listener (forward to app when certificate is not configured)
+resource "aws_lb_listener" "http_forward" {
+  count             = var.certificate_arn == "" ? 1 : 0
+  load_balancer_arn = aws_lb.main.arn
+  port              = 80
+  protocol          = "HTTP"
+
+  default_action {
+    type             = "forward"
+    target_group_arn = aws_lb_target_group.frontend.arn
+  }
+}
+
+resource "aws_lb_listener_rule" "http_backend_routes_primary" {
+  count        = var.certificate_arn == "" ? 1 : 0
+  listener_arn = aws_lb_listener.http_forward[0].arn
+  priority     = 100
+
+  action {
+    type             = "forward"
+    target_group_arn = aws_lb_target_group.app.arn
+  }
+
+  condition {
+    path_pattern {
+      values = slice(var.backend_path_patterns, 0, min(5, length(var.backend_path_patterns)))
+    }
+  }
+}
+
+resource "aws_lb_listener_rule" "http_backend_routes_secondary" {
+  count        = var.certificate_arn == "" && length(var.backend_path_patterns) > 5 ? 1 : 0
+  listener_arn = aws_lb_listener.http_forward[0].arn
+  priority     = 110
+
+  action {
+    type             = "forward"
+    target_group_arn = aws_lb_target_group.app.arn
+  }
+
+  condition {
+    path_pattern {
+      values = slice(var.backend_path_patterns, 5, length(var.backend_path_patterns))
+    }
+  }
+}
+
 # HTTPS Listener (requires certificate_arn)
 resource "aws_lb_listener" "https" {
   count             = var.certificate_arn != "" ? 1 : 0
@@ -205,7 +291,41 @@ resource "aws_lb_listener" "https" {
 
   default_action {
     type             = "forward"
+    target_group_arn = aws_lb_target_group.frontend.arn
+  }
+}
+
+resource "aws_lb_listener_rule" "https_backend_routes_primary" {
+  count        = var.certificate_arn != "" ? 1 : 0
+  listener_arn = aws_lb_listener.https[0].arn
+  priority     = 100
+
+  action {
+    type             = "forward"
     target_group_arn = aws_lb_target_group.app.arn
+  }
+
+  condition {
+    path_pattern {
+      values = slice(var.backend_path_patterns, 0, min(5, length(var.backend_path_patterns)))
+    }
+  }
+}
+
+resource "aws_lb_listener_rule" "https_backend_routes_secondary" {
+  count        = var.certificate_arn != "" && length(var.backend_path_patterns) > 5 ? 1 : 0
+  listener_arn = aws_lb_listener.https[0].arn
+  priority     = 110
+
+  action {
+    type             = "forward"
+    target_group_arn = aws_lb_target_group.app.arn
+  }
+
+  condition {
+    path_pattern {
+      values = slice(var.backend_path_patterns, 5, length(var.backend_path_patterns))
+    }
   }
 }
 

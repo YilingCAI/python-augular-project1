@@ -1,3 +1,14 @@
+###############################################################################
+# composite action: terraform/plan
+#
+# Runs terraform init (no backend) + terraform plan for a given environment
+# and saves the plan output.  Intended for review purposes only — never
+# applies changes.
+#
+# Callers:  ci.yml delegates to terraform/validate for the validate step,
+#           then runs an inline plan so output can be posted to PR comments.
+# Inputs:   working-directory, terraform-version, environment
+###############################################################################
 name: "Terraform Plan"
 description: "Generate Terraform plan for infrastructure changes"
 
@@ -21,8 +32,9 @@ inputs:
     description: "S3 bucket for Terraform state"
     required: true
   state-lock-table:
-    description: "DynamoDB table for state locking"
-    required: true
+    description: "(Deprecated) DynamoDB table for state locking"
+    required: false
+    default: ""
 
 outputs:
   plan-summary:
@@ -33,7 +45,7 @@ runs:
   using: "composite"
   steps:
     - name: Setup Terraform
-      uses: hashicorp/setup-terraform@v2
+      uses: hashicorp/setup-terraform@v3
       with:
         terraform_version: ${{ inputs.terraform-version }}
 
@@ -45,7 +57,7 @@ runs:
           -backend-config="bucket=${{ inputs.state-bucket }}" \
           -backend-config="key=${{ inputs.environment }}/terraform.tfstate" \
           -backend-config="region=${{ inputs.aws-region }}" \
-          -backend-config="dynamodb_table=${{ inputs.state-lock-table }}" \
+          -backend-config="use_lockfile=true" \
           -upgrade
 
     - name: Terraform plan

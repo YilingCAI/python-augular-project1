@@ -28,6 +28,7 @@ resource "aws_secretsmanager_secret" "db_password" {
 
 # Enable automatic rotation for DB password (CKV2_AWS_57)
 resource "aws_secretsmanager_secret_rotation" "db_password" {
+  count     = var.enable_secret_rotation ? 1 : 0
   secret_id = aws_secretsmanager_secret.db_password.id
   rotation_rules {
     automatically_after_days = 30
@@ -37,12 +38,18 @@ resource "aws_secretsmanager_secret_rotation" "db_password" {
 resource "aws_secretsmanager_secret_version" "db_password" {
   secret_id = aws_secretsmanager_secret.db_password.id
   secret_string = jsonencode({
-    username = var.db_username
-    password = random_password.db_password.result
-    engine   = "postgres"
-    host     = aws_db_instance.main.address
-    port     = aws_db_instance.main.port
-    dbname   = var.db_name
+    username          = var.db_username
+    password          = random_password.db_password.result
+    engine            = "postgres"
+    host              = aws_db_instance.main.address
+    port              = aws_db_instance.main.port
+    dbname            = var.db_name
+    DATABASE_USER     = var.db_username
+    DATABASE_PASSWORD = random_password.db_password.result
+    DATABASE_HOST     = aws_db_instance.main.address
+    DATABASE_PORT     = tostring(aws_db_instance.main.port)
+    DATABASE_NAME     = var.db_name
+    DATABASE_URL      = "postgresql://${var.db_username}:${random_password.db_password.result}@${aws_db_instance.main.address}:${aws_db_instance.main.port}/${var.db_name}"
   })
   # Ensure the secret value update happens after the RDS instance is created
   depends_on = [aws_db_instance.main]
@@ -194,7 +201,6 @@ resource "aws_kms_key" "cloudwatch_logs" {
 resource "aws_cloudwatch_log_group" "rds" {
   name              = "/aws/rds/${var.project_name}"
   retention_in_days = 365
-  kms_key_id        = aws_kms_key.cloudwatch_logs.arn
 
   tags = {
     Name = "${var.project_name}-rds-logs"

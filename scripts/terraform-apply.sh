@@ -1,10 +1,31 @@
-#!/bin/bash
-
-################################################################################
-# terraform-apply.sh - Apply Terraform Changes
-# Applies infrastructure changes from generated plan
-# Usage: ENV=staging bash scripts/terraform-apply.sh
-################################################################################
+#!/usr/bin/env bash
+###############################################################################
+# terraform-apply.sh — Apply Terraform changes from a saved plan
+#
+# Initialises Terraform against the remote S3 backend and applies the binary
+# plan produced by terraform-plan.sh.  If no plan file exists the plan script
+# is invoked automatically first.
+#
+# Production safeguard: deployments to ENV=prod require the operator to type
+# "yes" at an interactive confirmation prompt before any changes are applied.
+#
+# After a successful apply, Terraform outputs are exported to
+# /tmp/tf-outputs-<ENV>.json.  If jq is available, ECS_CLUSTER and
+# ALB_ENDPOINT are also extracted and exported into the current shell.
+#
+# Usage:
+#   ENV=staging bash scripts/terraform-apply.sh
+#   make tf-apply ENV=staging
+#
+# Environment variables:
+#   ENV                     REQUIRED — target environment: staging | prod
+#   TERRAFORM_STATE_BUCKET  REQUIRED — S3 bucket holding Terraform state
+#   AWS_REGION              REQUIRED — AWS region
+#   TF_ROOT                 optional — Terraform directory  (default: ./infra)
+#
+# Dependencies:   terraform; jq (optional — used to parse TF outputs)
+# Caller(s):      make tf-apply
+###############################################################################
 
 set -euo pipefail
 
@@ -66,7 +87,7 @@ cat > "${TF_ROOT}/backend-config.hcl" << EOF
 bucket         = "${TERRAFORM_STATE_BUCKET}"
 key            = "terraform/${ENV}/terraform.tfstate"
 region         = "${AWS_REGION}"
-dynamodb_table = "${TERRAFORM_LOCK_TABLE}"
+use_lockfile   = true
 encrypt        = true
 EOF
 

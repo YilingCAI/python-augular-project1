@@ -24,6 +24,18 @@ variable "app_port" {
   default     = 8000
 }
 
+variable "frontend_port" {
+  description = "Frontend container port"
+  type        = number
+  default     = 4200
+}
+
+variable "backend_path_patterns" {
+  description = "Path patterns that should route to backend target group"
+  type        = list(string)
+  default     = ["/health", "/health/*", "/docs", "/docs/*", "/redoc", "/redoc/*", "/openapi.json", "/api/*"]
+}
+
 variable "health_check_path" {
   description = "Health check path"
   type        = string
