@@ -1,5 +1,23 @@
-name: "Publish Pytest Results"
-description: "Upload pytest junit xml"
+###############################################################################
+# composite action: publish-test-results
+#
+# Uploads JUnit XML test result files as a workflow artifact so they are
+# visible in the GitHub Actions UI and retained for post-run analysis.
+#
+# Callers:  ci.yml (backend-ci job)
+# Inputs:   files (glob pattern), check_name (artifact display name)
+###############################################################################
+name: "Publish Test Results"
+description: "Upload JUnit XML test results as a workflow artifact"
+
+inputs:
+  files:
+    description: "Glob pattern(s) for JUnit XML files (newline-separated)"
+    required: true
+  check_name:
+    description: "Artifact name shown in the Actions UI"
+    required: false
+    default: "Test Results"
 
 runs:
   using: "composite"
@@ -7,5 +25,6 @@ runs:
     - name: Upload test results
       uses: actions/upload-artifact@v4
       with:
-        name: pytest-results
-        path: backend/test-results.xml
+        name: ${{ inputs.check_name }}
+        path: ${{ inputs.files }}
+        if-no-files-found: warn

@@ -1,5 +1,7 @@
 # Build stage
-FROM node:20-alpine AS builder
+ARG NODE_VERSION=20
+ARG NGINX_TAG=alpine
+FROM node:${NODE_VERSION}-alpine AS builder
 
 WORKDIR /app
 
@@ -20,7 +22,7 @@ COPY src ./src
 RUN npm run build
 
 # Production stage
-FROM nginx:alpine
+FROM nginx:${NGINX_TAG}
 
 # Copy nginx config with SPA fallback (try_files → index.html)
 COPY nginx.conf /etc/nginx/conf.d/default.conf

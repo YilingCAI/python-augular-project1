@@ -1,265 +1,78 @@
-# Secrets Management - Complete Guide
+# Secrets Management Guide
 
-This document explains how secrets are managed across development, CI/CD, and production environments.
+This repository separates runtime application secrets from CI/CD orchestration secrets.
 
-## 🔐 Core Principle
+## Core rules
 
-**Secrets never appear in code.** Instead:
-- **Development**: Local `.env.local` files (gitignored)
-- **CI/CD**: GitHub Secrets (encrypted)
-- **Runtime**: AWS Secrets Manager (encrypted)
+- Never commit secrets to git
+- Keep runtime secrets in AWS Secrets Manager
+- Keep CI/CD orchestration secrets in GitHub Secrets (repo/environment)
+- Keep only non-secret configuration in `config/.env.*`
 
-## Secrets Types & Where They Live
+## Secret locations by scope
 
-### 1. GitHub Secrets (CI/CD Pipeline)
+### GitHub Secrets (CI/CD)
 
-Used by GitHub Actions workflows. Stored in repository settings.
+Repository-level (used by `ci.yml`):
 
-**Required Secrets:**
-```
-AWS_ROLE_TO_ASSUME              # ARN of GitHubActionsRole
-TERRAFORM_STATE_BUCKET          # S3 bucket for Terraform state
-TERRAFORM_LOCK_TABLE            # DynamoDB table for state locking
-```
+- `DATABASE_USER`
+- `DATABASE_PASSWORD`
+- `DATABASE_NAME`
+- `DATABASE_PORT`
+- `AWS_ROLE_TO_ASSUME`
+- `GITGUARDIAN_API_KEY`
+- `SNYK_TOKEN`
 
-**Setting Up:**
-```bash
-# Using GitHub CLI
-gh secret set AWS_ROLE_TO_ASSUME --body "arn:aws:iam::123456789012:role/GitHubActionsRole"
-gh secret set TERRAFORM_STATE_BUCKET --body "myproject-tf-state-staging"
-gh secret set TERRAFORM_LOCK_TABLE --body "terraform-locks-staging"
-```
+Environment `staging`:
 
-**In Workflows:**
-```yaml
-- name: Configure AWS credentials
-  uses: aws-actions/configure-aws-credentials@v4
-  with:
-    role-to-assume: ${{ secrets.AWS_ROLE_TO_ASSUME }}
-```
+- `AWS_ROLE_TO_ASSUME`
+- `TERRAFORM_STATE_BUCKET`
+- `TERRAFORM_LOCK_TABLE` (compatibility input)
+- `JWT_SECRET_KEY`
 
-### 2. AWS Secrets Manager (Runtime)
+Environment `production`:
 
-Stores application secrets that are injected into ECS tasks.
+- `AWS_ROLE_TO_ASSUME`
+- `AWS_REGION`
+- `TF_VERSION`
+- `TERRAFORM_STATE_BUCKET`
+- `TERRAFORM_LOCK_TABLE` (compatibility input)
+- `JWT_SECRET_KEY`
 
-**Secrets to Create:**
-```bash
-# Database password
-aws secretsmanager create-secret \
-  --name /myproject/staging/db-password \
-  --secret-string "your-db-password" \
-  --region us-east-1
+Environment variables (`vars`):
 
-# JWT secret
-aws secretsmanager create-secret \
-  --name /myproject/staging/jwt-secret \
-  --secret-string "your-jwt-secret" \
-  --region us-east-1
+- `APP_URL` in `staging`
+- `APP_URL` in `production`
 
-# API keys or third-party credentials
-aws secretsmanager create-secret \
-  --name /myproject/staging/api-keys \
-  --secret-string '{"key1": "value1", "key2": "value2"}' \
-  --region us-east-1
-```
+### AWS Secrets Manager (runtime)
 
-**In Terraform (variables.tf):**
-```hcl
-data "aws_secretsmanager_secret" "db_password" {
-  name = "/myproject/${var.environment}/db-password"
-}
+Runtime app secrets (for backend task runtime) should be stored as environment-scoped secrets, for example:
 
-data "aws_secretsmanager_secret_version" "db_password" {
-  secret_id = data.aws_secretsmanager_secret.db_password.id
-}
+- `/myproject/staging/db-password`
+- `/myproject/staging/jwt-secret`
+- `/myproject/prod/db-password`
+- `/myproject/prod/jwt-secret`
 
-locals {
-  db_password = jsondecode(data.aws_secretsmanager_secret_version.db_password.secret_string)
-}
-```
+### Local development
 
-**In ECS Task Definition (Terraform):**
-```hcl
-container_definitions = jsonencode([
-  {
-    name      = "backend"
-    image     = aws_ecr_repository.backend.repository_url
-    environment = [
-      { name = "DATABASE_URL", value = "postgresql://postgres:${local.db_password}@${aws_db_instance.postgres.endpoint}/myproject" },
-      { name = "JWT_SECRET_KEY", value = local.jwt_secret },
-    ]
-    logConfiguration = {
-      logDriver = "awslogs"
-      options = {
-        "awslogs-group"         = aws_cloudwatch_log_group.ecs_logs.name
-        "awslogs-region"        = var.aws_region
-        "awslogs-stream-prefix" = "ecs"
-      }
-    }
-  }
-])
-```
+- Use `config/.env.dev` -> `deploy/.env`
+- Keep local values local; `deploy/.env` must stay gitignored
 
-### 3. Local Development (.env.local)
+## Terraform backend note
 
-For developers working locally.
+Terraform backend locking is now based on `use_lockfile=true`.
 
-**Setup:**
-```bash
-# Copy template
-cp config/.env.example .env.local
+The workflows still expose `TERRAFORM_LOCK_TABLE` input for compatibility, but new setup should prioritize lockfile backend behavior.
 
-# Edit with your local values
-# NEVER commit .env.local
-```
+## Rotation guidance
 
-**Example .env.local:**
-```env
-DATABASE_URL=postgresql://postgres:mypass@localhost:5432/myproject
-JWT_SECRET_KEY=local-dev-secret
-AWS_ACCESS_KEY_ID=local
-AWS_SECRET_ACCESS_KEY=local
-```
+- Rotate critical secrets regularly
+- Rotate immediately after accidental exposure
+- Document rotation date, owner, and impacted systems
 
-**Usage in Backend:**
-```python
-import os
-from dotenv import load_dotenv
+## Incident response (secret exposure)
 
-load_dotenv('.env.local')
-
-database_url = os.getenv('DATABASE_URL')
-jwt_secret = os.getenv('JWT_SECRET_KEY')
-```
-
-**Usage in Frontend:**
-```typescript
-import { environment } from './environments/environment';
-
-// Uses environment variables or .env.local
-const apiUrl = process.env['NG_APP_API_URL'] || 'http://localhost:8000';
-```
-
-**Usage in Scripts:**
-```bash
-#!/bin/bash
-set -a
-source .env.local
-set +a
-
-# Now $DATABASE_URL and other vars are available
-echo "Database: $DATABASE_URL"
-```
-
-## 🔄 Secret Flow by Environment
-
-### Development Flow
-```
-Developer creates .env.local
-    ↓
-Runs: make dev
-    ↓
-Script sources .env.local
-    ↓
-Application reads environment variables
-    ↓
-Connects to local PostgreSQL with local secrets
-```
-
-### Staging/Production Flow via CI/CD
-```
-Developer pushes code to develop/main
-    ↓
-GitHub Actions triggered
-    ↓
-Workflow reads GitHub Secrets
-    ↓
-Secrets passed to script via env variables
-    ↓
-Script runs make tf-plan / make tf-apply
-    ↓
-Terraform reads secrets from AWS Secrets Manager
-    ↓
-Terraform injects secrets into ECS task definition
-    ↓
-ECS starts container with environment variables
-    ↓
-Application reads from environment at runtime
-```
-
-## 🛡️ Best Practices
-
-### ✅ Do's
-
-- ✅ Store in `.env.local` for local development
-- ✅ Store in GitHub Secrets for CI/CD infrastructure
-- ✅ Store in AWS Secrets Manager for runtime
-- ✅ Use `export` in scripts to pass through environment
-- ✅ Rotate secrets regularly (every 90 days)
-- ✅ Use environment-specific secrets (dev vs prod)
-- ✅ Add `.env.local` to `.gitignore` (already done)
-- ✅ Log secret names (not values) for debugging
-- ✅ Use AWS IAM roles instead of hardcoded credentials
-
-### ❌ Don'ts
-
-- ❌ Never commit `.env.local` to git
-- ❌ Never hardcode secrets in code
-- ❌ Never put secrets in Makefile
-- ❌ Never put secrets in shell scripts
-- ❌ Never put secrets in Terraform code
-- ❌ Never use same secrets across environments
-- ❌ Never share secrets in Slack/Email
-- ❌ Never log secret values
-
-## 🚨 Incident Response
-
-### If a Secret is Exposed
-
-1. **Immediately rotate the secret:**
-   ```bash
-   # Update in AWS Secrets Manager
-   aws secretsmanager put-secret-value \
-     --secret-id /myproject/staging/db-password \
-     --secret-string "new-password"
-   ```
-
-2. **Update all places using it:**
-   - GitHub Actions workflows (if used)
-   - ECS task definitions
-   - Local `.env.local` files (manually for each developer)
-   - Third-party services (if applicable)
-
-3. **Audit access:**
-   ```bash
-   # Check CloudWatch logs
-   aws logs tail /aws/ecs/myproject --follow
-   ```
-
-4. **Document the incident:**
-   - What was exposed
-   - When it was discovered
-   - What actions were taken
-   - Timeline
-
-## 📋 Secrets Checklist
-
-Before deploying to production:
-
-- [ ] All secrets in AWS Secrets Manager
-- [ ] No secrets in Terraform code
-- [ ] No secrets in shell scripts
-- [ ] No secrets in Makefile
-- [ ] All secrets follow naming convention: `/myproject/{env}/{secret-name}`
-- [ ] GitHub Actions uses `${{ secrets.* }}`
-- [ ] ECS task definition reads from environment
-- [ ] `.env.local` added to `.gitignore`
-- [ ] Team trained on secrets policy
-- [ ] Secret rotation schedule established
-
-## 🔗 Related Documentation
-
-- [AWS Secrets Manager](https://docs.aws.amazon.com/secretsmanager/)
-- [GitHub Encrypted Secrets](https://docs.github.com/en/actions/security-guides/encrypted-secrets)
-- [Terraform AWS Secrets](https://registry.terraform.io/providers/hashicorp/aws/latest/docs/data-sources/secretsmanager_secret)
-- [ECS Task IAM Roles](https://docs.aws.amazon.com/AmazonECS/latest/developerguide/task_IAM_roles.html)
+1. Revoke or rotate the exposed secret immediately
+2. Update dependent systems and deployments
+3. Redeploy affected services
+4. Audit logs and document incident timeline

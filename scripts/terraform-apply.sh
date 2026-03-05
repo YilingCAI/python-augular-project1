@@ -1,10 +1,31 @@
-#!/bin/bash
-
-################################################################################
-# terraform-apply.sh - Apply Terraform Changes
-# Applies infrastructure changes from generated plan
-# Usage: ENV=staging bash scripts/terraform-apply.sh
-################################################################################
+#!/usr/bin/env bash
+###############################################################################
+# terraform-apply.sh — Apply Terraform changes from a saved plan
+#
+# Initialises Terraform against the remote S3 backend and applies the binary
+# plan produced by terraform-plan.sh.  If no plan file exists the plan script
+# is invoked automatically first.
+#
+# Production safeguard: local production execution is disabled. Production
+# changes must run through GitHub Actions workflows.
+#
+# After a successful apply, Terraform outputs are exported to
+# /tmp/tf-outputs-<ENV>.json.  If jq is available, ECS_CLUSTER and
+# ALB_ENDPOINT are also extracted and exported into the current shell.
+#
+# Usage:
+#   ENV=staging bash scripts/terraform-apply.sh
+#   make tf-apply ENV=staging
+#
+# Environment variables:
+#   ENV                     REQUIRED — target environment: dev | staging
+#   TERRAFORM_STATE_BUCKET  REQUIRED — S3 bucket holding Terraform state
+#   AWS_REGION              REQUIRED — AWS region
+#   TF_ROOT                 optional — Terraform directory  (default: ./infra)
+#
+# Dependencies:   terraform; jq (optional — used to parse TF outputs)
+# Caller(s):      make tf-apply
+###############################################################################
 
 set -euo pipefail
 
@@ -21,6 +42,12 @@ NC='\033[0m' # No Color
 
 if [ -z "${ENV:-}" ]; then
     echo -e "${RED}❌ ENV not set${NC}"
+    exit 1
+fi
+
+if [[ "${ENV}" =~ ^(prod|production)$ ]]; then
+    echo -e "${RED}❌ Local production runs are disabled.${NC}"
+    echo -e "${YELLOW}Use GitHub Actions release workflow for production infrastructure changes.${NC}"
     exit 1
 fi
 
@@ -42,21 +69,6 @@ if [ ! -f "$TFPLAN_FILE" ]; then
 fi
 
 # ============================================================================
-# Production Confirmation
-# ============================================================================
-
-if [ "$ENV" = "prod" ]; then
-    echo -e "${RED}🚨 PRODUCTION ENVIRONMENT 🚨${NC}"
-    echo -e "${YELLOW}This will modify PRODUCTION infrastructure${NC}"
-    echo ""
-    read -p "Type 'yes' to continue with production apply: " confirm
-    if [ "$confirm" != "yes" ]; then
-        echo -e "${YELLOW}❌ Apply cancelled${NC}"
-        exit 1
-    fi
-fi
-
-# ============================================================================
 # Terraform Backend Configuration
 # ============================================================================
 
@@ -66,7 +78,7 @@ cat > "${TF_ROOT}/backend-config.hcl" << EOF
 bucket         = "${TERRAFORM_STATE_BUCKET}"
 key            = "terraform/${ENV}/terraform.tfstate"
 region         = "${AWS_REGION}"
-dynamodb_table = "${TERRAFORM_LOCK_TABLE}"
+use_lockfile   = true
 encrypt        = true
 EOF
 

@@ -1,3 +1,14 @@
+###############################################################################
+# composite action: docker-build
+#
+# Builds a Docker image, optionally pushes it to a registry, and runs a
+# Trivy vulnerability scan on the resulting image.
+#
+# Callers:  staging.yml (build job),  release.yml (build-production job)
+# Inputs:   context, dockerfile, image-name, registry, tags, build-args,
+#           scan, scan-severity, scan-exit-code, cache-scope,
+#           registry-username, registry-password
+###############################################################################
 name: "Docker Build"
 description: "Build and push Docker image to registry"
 
@@ -17,10 +28,12 @@ inputs:
     default: "ghcr.io"
   registry-username:
     description: "Registry username"
-    required: true
+    required: false
+    default: ""
   registry-password:
     description: "Registry password/token"
-    required: true
+    required: false
+    default: ""
   push:
     description: "Push to registry after build"
     required: false
@@ -29,6 +42,30 @@ inputs:
     description: "Run Trivy vulnerability scan"
     required: false
     default: "true"
+  scan-severity:
+    description: "Trivy severities to include"
+    required: false
+    default: "CRITICAL,HIGH"
+  scan-exit-code:
+    description: "Trivy exit code on findings"
+    required: false
+    default: "0"
+  tags:
+    description: "docker/metadata-action tag rules"
+    required: false
+    default: ""
+  build-args:
+    description: "Additional Docker build args"
+    required: false
+    default: ""
+  cache-scope:
+    description: "GHA cache scope"
+    required: false
+    default: ""
+  platforms:
+    description: "Target platforms for image build"
+    required: false
+    default: "linux/amd64"
   cache:
     description: "Use GitHub Actions cache"
     required: false
@@ -56,6 +93,7 @@ runs:
       uses: docker/setup-buildx-action@v2
 
     - name: Login to registry
+      if: inputs.registry-username != '' && inputs.registry-password != ''
       uses: docker/login-action@v2
       with:
         registry: ${{ inputs.registry }}
@@ -78,11 +116,7 @@ runs:
       uses: docker/metadata-action@v4
       with:
         images: ${{ inputs.registry }}/${{ inputs.image-name }}
-        tags: |
-          type=ref,event=branch
-          type=sha,prefix={{branch}}-
-          type=semver,pattern={{version}}
-          type=raw,value=latest,enable={{is_default_branch}}
+        tags: ${{ inputs.tags != '' && inputs.tags || 'type=ref,event=branch\ntype=sha,prefix={{branch}}-\ntype=semver,pattern={{version}}\ntype=raw,value=latest,enable={{is_default_branch}}' }}
 
     - name: Build and push Docker image
       id: build
@@ -90,15 +124,17 @@ runs:
       with:
         context: ${{ inputs.context }}
         file: ${{ inputs.dockerfile }}
+        platforms: ${{ inputs.platforms }}
         push: ${{ inputs.push }}
         tags: ${{ steps.meta.outputs.tags }}
         labels: ${{ steps.meta.outputs.labels }}
-        cache-from: ${{ inputs.cache == 'true' && 'type=gha' || '' }}
-        cache-to: ${{ inputs.cache == 'true' && format('type=gha,mode=max,key={0}', steps.cache-key.outputs.key) || '' }}
+        cache-from: ${{ inputs.cache == 'true' && format('type=gha,scope={0}', inputs.cache-scope != '' && inputs.cache-scope || inputs.image-name) || '' }}
+        cache-to: ${{ inputs.cache == 'true' && format('type=gha,mode=max,scope={0}', inputs.cache-scope != '' && inputs.cache-scope || inputs.image-name) || '' }}
         build-args: |
           BUILD_DATE=$(date -u +'%Y-%m-%dT%H:%M:%SZ')
           VCS_REF=${{ github.sha }}
           VERSION=${{ github.ref_name }}
+          ${{ inputs.build-args }}
 
     - name: Run Trivy vulnerability scan
       id: trivy
@@ -108,7 +144,8 @@ runs:
         image-ref: ${{ steps.meta.outputs.tags }}
         format: "sarif"
         output: "trivy-results.sarif"
-        severity: "CRITICAL,HIGH"
+        severity: ${{ inputs.scan-severity }}
+        exit-code: ${{ inputs.scan-exit-code }}
       continue-on-error: true
 
     - name: Upload Trivy results

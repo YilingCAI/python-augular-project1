@@ -2,8 +2,7 @@ import { ValidationService } from '@/app/core/validation.service';
 import { GameService } from '@/app/services/game.service';
 import { GameResponse } from '@/app/types/api';
 import { CommonModule } from '@angular/common';
-import { Component, OnDestroy, OnInit } from '@angular/core';
-import { Router } from '@angular/router';
+import { Component, OnDestroy } from '@angular/core';
 import { Subject } from 'rxjs';
 import { takeUntil } from 'rxjs/operators';
 import { GameBoardComponent } from '../game-board/game-board.component';
@@ -22,7 +21,7 @@ import { GameBoardComponent } from '../game-board/game-board.component';
     templateUrl: './create-game.component.html',
     styleUrls: ['./create-game.component.scss']
 })
-export class CreateGameComponent implements OnInit, OnDestroy {
+export class CreateGameComponent implements OnDestroy {
     gameId: string | null = null;
     loading: boolean = false;
     error: string | null = null;
@@ -32,17 +31,12 @@ export class CreateGameComponent implements OnInit, OnDestroy {
     showCopyMessage: boolean = false;
 
     private destroy$ = new Subject<void>();
-    private copyMessageTimeout: any;
+    private copyMessageTimeout: ReturnType<typeof setTimeout> | null = null;
 
     constructor(
         private gameService: GameService,
-        private router: Router,
         private validationService: ValidationService
     ) { }
-
-    ngOnInit(): void {
-        // Component initialization
-    }
 
     ngOnDestroy(): void {
         if (this.copyMessageTimeout) {

@@ -17,3 +17,8 @@ output "target_group_name" {
   description = "Target group name"
   value       = aws_lb_target_group.app.name
 }
+
+output "frontend_target_group_arn" {
+  description = "Frontend target group ARN"
+  value       = aws_lb_target_group.frontend.arn
+}

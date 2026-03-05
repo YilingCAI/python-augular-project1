@@ -30,9 +30,7 @@ export interface LoginResponse {
 /**
  * Game-related types
  */
-export interface GameCreate {
-    // Empty for now - uses current_user from JWT
-}
+export type GameCreate = Record<string, never>;
 
 export interface MoveRequest {
     game_id: string; // UUID

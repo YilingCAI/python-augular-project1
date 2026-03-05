@@ -1,0 +1,63 @@
+###############################################################################
+# _smoke-test.yml — Reusable smoke test workflow
+#
+# Called by staging.yml and release.yml after a deployment to verify the
+# service is healthy.  All deployment-specific values are passed via inputs.
+###############################################################################
+name: Smoke Test
+
+on:
+    workflow_call:
+        inputs:
+            environment:
+                description: "GitHub Environment name (e.g. staging, production)"
+                required: true
+                type: string
+            app-url:
+                description: "Base URL of the deployed application"
+                required: true
+                type: string
+            warmup-seconds:
+                description: "Seconds to wait before probing the health endpoint"
+                required: false
+                type: number
+                default: 15
+            deploy-sha:
+                description: "Commit SHA that was deployed (shown in summary)"
+                required: false
+                type: string
+                default: ""
+            deploy-version:
+                description: "Version / tag that was deployed (shown in summary)"
+                required: false
+                type: string
+                default: ""
+
+jobs:
+    smoke-test:
+        name: Smoke Test (${{ inputs.environment }})
+        runs-on: ubuntu-latest
+        timeout-minutes: 5
+        environment: ${{ inputs.environment }}
+        steps:
+            - uses: actions/checkout@v4
+
+            - name: Health check
+              env:
+                  APP_URL: ${{ inputs.app-url }}
+                  WARMUP_SECS: ${{ inputs.warmup-seconds }}
+              run: bash .github/scripts/smoke-test.sh
+
+            - name: Write deployment summary
+              if: always()
+              run: |
+                  {
+                    echo "## ${{ inputs.environment }} Deployment"
+                    echo "| Field   | Value |"
+                    echo "|---------|-------|"
+                    echo "| Env     | \`${{ inputs.environment }}\` |"
+                    echo "| Version | \`${{ inputs.deploy-version != '' && inputs.deploy-version || 'N/A' }}\` |"
+                    echo "| Commit  | \`${{ inputs.deploy-sha != '' && inputs.deploy-sha || github.sha }}\` |"
+                    echo "| URL     | ${{ inputs.app-url }} |"
+                    echo "| Status  | ${{ job.status }} |"
+                  } >> "$GITHUB_STEP_SUMMARY"

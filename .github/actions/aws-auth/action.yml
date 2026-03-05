@@ -1,3 +1,14 @@
+###############################################################################
+# composite action: aws-auth
+#
+# Authenticates the GitHub Actions runner with AWS by assuming an IAM role
+# via OIDC (no long-lived credentials stored in secrets).
+#
+# Callers:  ci.yml (terraform-plan),  staging.yml (terraform-staging,
+#           deploy-staging),  release.yml (terraform-production,
+#           deploy-production)
+# Inputs:   role-arn, aws-region
+###############################################################################
 name: "AWS Authentication"
 description: "Authenticate with AWS using OIDC"
 

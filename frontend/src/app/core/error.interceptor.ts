@@ -3,6 +3,10 @@ import { Injectable } from '@angular/core';
 import { Observable, throwError } from 'rxjs';
 import { catchError } from 'rxjs/operators';
 
+interface ErrorDetailPayload {
+  detail: unknown;
+}
+
 /**
  * Custom error class for API errors
  */
@@ -48,7 +52,7 @@ export class ErrorInterceptor implements HttpInterceptor {
 
         // 2️⃣ FastAPI style: { detail: "message" }
         } else if (error.error && typeof error.error === 'object' && 'detail' in error.error) {
-          errorMessage = String((error.error as any).detail);
+          errorMessage = String((error.error as ErrorDetailPayload).detail);
 
         // 3️⃣ Fallback to status text
         } else if (error.statusText) {

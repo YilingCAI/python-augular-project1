@@ -1,10 +1,25 @@
-#!/bin/bash
-
-################################################################################
-# terraform-validate.sh - Terraform Validation and Linting
-# Validates Terraform configuration without requiring state
-# Usage: bash scripts/terraform-validate.sh
-################################################################################
+#!/usr/bin/env bash
+###############################################################################
+# terraform-validate.sh — Terraform format, init, and validate
+#
+# Runs the three validation steps that require no remote state and no AWS
+# credentials, making this safe to call without an active AWS session:
+#
+#   1. terraform fmt --check --recursive   formatting diff (exits 1 if dirty)
+#   2. terraform init  -backend=false      provider + module resolution
+#   3. terraform validate                  configuration syntax check
+#   4. tflint  (if installed)              linting rules
+#
+# Usage:
+#   bash scripts/terraform-validate.sh
+#   make tf-validate
+#
+# Environment variables:
+#   PROJECT_ROOT   optional — repo root; TF_ROOT defaults to ./infra
+#
+# Dependencies:   terraform; tflint (optional — skipped if not on PATH)
+# Caller(s):      make tf-validate  /  .github/actions/terraform/validate
+###############################################################################
 
 set -euo pipefail
 
@@ -24,6 +39,9 @@ TF_ROOT="${PROJECT_ROOT:-./infra}"
 # ============================================================================
 
 echo -e "${BLUE}📋 Checking Terraform format...${NC}"
+# Clear previous backend metadata so stale remote backend params (e.g. deprecated
+# dynamodb_table) do not leak warnings into local validation-only runs.
+rm -rf "${TF_ROOT}/.terraform"
 if terraform -chdir="${TF_ROOT}" fmt -check -recursive .; then
     echo -e "${GREEN}✓${NC} Terraform format is correct"
 else

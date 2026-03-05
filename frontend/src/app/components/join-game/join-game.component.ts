@@ -2,9 +2,8 @@ import { ValidationService } from '@/app/core/validation.service';
 import { GameService } from '@/app/services/game.service';
 import { GameResponse } from '@/app/types/api';
 import { CommonModule, Location } from '@angular/common';
-import { Component, OnDestroy, OnInit } from '@angular/core';
+import { Component, OnDestroy } from '@angular/core';
 import { FormsModule } from '@angular/forms';
-import { Router } from '@angular/router';
 import { Subject } from 'rxjs';
 import { takeUntil } from 'rxjs/operators';
 import { GameBoardComponent } from '../game-board/game-board.component';
@@ -23,7 +22,7 @@ import { GameBoardComponent } from '../game-board/game-board.component';
     templateUrl: './join-game.component.html',
     styleUrls: ['./join-game.component.scss']
 })
-export class JoinGameComponent implements OnInit, OnDestroy {
+export class JoinGameComponent implements OnDestroy {
     gameIdInput: string = '';
     gameId: string | null = null;
     loading: boolean = false;
@@ -35,14 +34,9 @@ export class JoinGameComponent implements OnInit, OnDestroy {
 
     constructor(
         private gameService: GameService,
-        private router: Router,
         private validationService: ValidationService,
         private location: Location
     ) { }
-
-    ngOnInit(): void {
-        // Component initialization
-    }
 
     ngOnDestroy(): void {
         this.destroy$.next();

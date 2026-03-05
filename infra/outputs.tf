@@ -13,6 +13,11 @@ output "ecs_service_name" {
   value       = module.ecs.service_name
 }
 
+output "frontend_ecs_service_name" {
+  description = "Frontend ECS service name"
+  value       = module.ecs_frontend.service_name
+}
+
 output "rds_endpoint" {
   description = "RDS endpoint"
   value       = module.rds.db_endpoint

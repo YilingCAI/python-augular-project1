@@ -44,7 +44,6 @@ resource "aws_flow_log" "main" {
 resource "aws_cloudwatch_log_group" "flow_logs" {
   name              = "/aws/vpc/flowlogs/${var.project_name}"
   retention_in_days = 30
-  kms_key_id        = aws_kms_key.flow_logs.arn
 
   tags = {
     Name = "${var.project_name}-vpc-flow-logs"
@@ -284,6 +283,14 @@ resource "aws_security_group" "ecs_tasks" {
     protocol        = "tcp"
     security_groups = [aws_security_group.alb.id]
     description     = "Allow app port from ALB"
+  }
+
+  ingress {
+    from_port       = var.frontend_port
+    to_port         = var.frontend_port
+    protocol        = "tcp"
+    security_groups = [aws_security_group.alb.id]
+    description     = "Allow frontend port from ALB"
   }
 
   egress {

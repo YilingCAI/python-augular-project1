@@ -66,3 +66,9 @@ variable "log_retention_days" {
   type        = number
   default     = 7
 }
+
+variable "enable_secret_rotation" {
+  description = "Enable Secrets Manager secret rotation resources (requires Lambda rotation function integration)"
+  type        = bool
+  default     = false
+}

@@ -87,7 +87,7 @@ export class AuthService {
     /**
      * Login user with username and password
      */
-    login(credentials: UserLogin): Observable<UserResponse> {
+    login(credentials: UserLogin): Observable<LoginResponse> {
         this.loadingSubject.next(true);
         this.errorSubject.next(null);
 
@@ -112,7 +112,7 @@ export class AuthService {
                     this.loadingSubject.next(false);
                     return throwError(() => new Error(message));
                 })
-            ) as Observable<any>;
+            );
     }
 
     /**

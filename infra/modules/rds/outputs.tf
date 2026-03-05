@@ -32,3 +32,8 @@ output "secret_name" {
   description = "Secrets Manager secret name"
   value       = aws_secretsmanager_secret.db_password.name
 }
+
+output "kms_key_arn" {
+  description = "RDS KMS key ARN"
+  value       = aws_kms_key.rds.arn
+}

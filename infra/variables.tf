@@ -111,10 +111,28 @@ variable "ecr_repository_url" {
   type        = string
 }
 
+variable "frontend_ecr_repository_url" {
+  description = "Frontend ECR repository URL (optional; defaults by replacing /backend with /frontend)"
+  type        = string
+  default     = ""
+}
+
 variable "image_tag" {
   description = "Docker image tag"
   type        = string
   default     = "latest"
+}
+
+variable "frontend_image_tag" {
+  description = "Frontend Docker image tag (optional; defaults to image_tag)"
+  type        = string
+  default     = ""
+}
+
+variable "frontend_port" {
+  description = "Frontend container port"
+  type        = number
+  default     = 4200
 }
 
 variable "task_cpu" {
@@ -133,6 +151,12 @@ variable "desired_count" {
   description = "Desired number of ECS tasks"
   type        = number
   default     = 2
+}
+
+variable "frontend_desired_count" {
+  description = "Desired number of frontend ECS tasks"
+  type        = number
+  default     = 1
 }
 
 variable "min_capacity" {
@@ -189,6 +213,12 @@ variable "jwt_expire_minutes" {
   description = "JWT expiration time in minutes"
   type        = number
   default     = 60
+}
+
+variable "enable_secret_rotation" {
+  description = "Enable Secrets Manager automatic rotation resources (requires Lambda rotation function integration)"
+  type        = bool
+  default     = false
 }
 
 # Logging

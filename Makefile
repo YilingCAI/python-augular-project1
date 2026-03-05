@@ -1,5 +1,24 @@
+###############################################################################
+# Makefile — Local developer CLI for mypythonproject1
+#
+# Wraps common operations so engineers don't need to remember long commands:
+#   - Docker Compose local environment  (docker-up / docker-down)
+#   - Backend / frontend development server  (make dev)
+#   - Test runners  (make test, backend-test-*, frontend-test, frontend-build)
+#   - Linting  (make lint)
+#   - Terraform local plan/apply/destroy  (make tf-*  ENV=staging|prod)
+#   - Docker build + ECR push  (make docker-build / docker-push  ENV=...)
+#   - ECS rolling deploy  (make ecs-deploy  ENV=...  IMAGE_TAG=...)
+#   - One-time AWS infra bootstrap  (make bootstrap)
+#   - Environment variable setup  (make setup-env  ENV=...)
+#
+# All deployment targets require real AWS credentials in the shell.
+# Terraform targets delegate to scripts/terraform-*.sh.
+###############################################################################
 .PHONY: help install dev docker-up docker-down docker-logs \
-	test backend-test frontend-test lint format clean \
+	test backend-test frontend-test frontend-build lint clean \
+	ensure-backend-venv ensure-frontend-deps \
+	bootstrap setup-env \
 	tf-validate tf-plan tf-apply tf-destroy \
 	docker-build docker-push ecs-deploy deploy deploy-staging deploy-prod
 
@@ -11,6 +30,40 @@ GREEN := \033[0;32m
 YELLOW := \033[0;33m
 RED := \033[0;31m
 NC := \033[0m # No Color
+
+# ============================================================================
+# LOCAL ENV / TFVARS LOADING (dev by default)
+# ============================================================================
+
+ENV_FILE := deploy/.env
+DEV_TFVARS_FILE := infra/envs/dev.tfvars
+
+-include $(ENV_FILE)
+
+# Prefer tfvars as source of truth for infra variables.
+TFVARS_ENV := $(shell awk -F'=' '/^environment[[:space:]]*=/{gsub(/["[:space:]]/,"",$$2); print $$2; exit}' $(DEV_TFVARS_FILE) 2>/dev/null)
+ENV ?= $(or $(TFVARS_ENV),dev)
+TFVARS_FILE = infra/envs/$(ENV).tfvars
+
+TFVARS_PROJECT_NAME := $(shell awk -F'=' '/^project_name[[:space:]]*=/{gsub(/["[:space:]]/,"",$$2); print $$2; exit}' $(TFVARS_FILE) 2>/dev/null || awk -F'=' '/^project_name[[:space:]]*=/{gsub(/["[:space:]]/,"",$$2); print $$2; exit}' $(DEV_TFVARS_FILE) 2>/dev/null)
+TFVARS_AWS_REGION := $(shell awk -F'=' '/^aws_region[[:space:]]*=/{gsub(/["[:space:]]/,"",$$2); print $$2; exit}' $(TFVARS_FILE) 2>/dev/null || awk -F'=' '/^aws_region[[:space:]]*=/{gsub(/["[:space:]]/,"",$$2); print $$2; exit}' $(DEV_TFVARS_FILE) 2>/dev/null)
+
+PROJECT_NAME := $(or $(TFVARS_PROJECT_NAME),$(PROJECT_NAME),mypythonproject1)
+AWS_REGION := $(or $(TFVARS_AWS_REGION),$(AWS_REGION),us-east-1)
+DOCKER_PLATFORM ?= linux/amd64
+
+ECS_CLUSTER ?= $(PROJECT_NAME)-cluster-$(ENV)
+ECS_SERVICE_BACKEND ?= backend-service-$(ENV)
+ECS_SERVICE_FRONTEND ?= frontend-service-$(ENV)
+
+TERRAFORM_STATE_BUCKET ?= terraform-state-$(AWS_ACCOUNT_ID)
+TERRAFORM_LOCK_TABLE ?= terraform-locks
+
+ifeq ($(strip $(AWS_ACCOUNT_ID)),)
+AWS_ACCOUNT_ID := $(shell aws sts get-caller-identity --query Account --output text 2>/dev/null)
+endif
+
+BACKEND_VENV_PY := backend/.venv/bin/python
 
 # ============================================================================
 # HELP & DOCUMENTATION
@@ -41,15 +94,19 @@ help:
 	@echo "  $(YELLOW)make backend-test-integration$(NC) - Integration tests (real DB)"
 	@echo "  $(YELLOW)make backend-test-coverage$(NC) - Tests with coverage report"
 	@echo "  $(YELLOW)make backend-validate-tests$(NC) - Validate test configuration"
-	@echo "  $(YELLOW)make frontend-test$(NC)        - Frontend tests"
-	@echo "  $(YELLOW)make lint$(NC)                 - Run linters (ruff, eslint)"
-	@echo "  $(YELLOW)make format$(NC)               - Format code (black, prettier)"
+	@echo "  $(YELLOW)make frontend-test$(NC)        - Frontend tests (Karma/Jasmine)"
+	@echo "  $(YELLOW)make frontend-build$(NC)       - TypeScript type-check + production build (mirrors CI)"
+	@echo "  $(YELLOW)make lint$(NC)                 - Ruff lint+format-check (backend) + ESLint + type-check (frontend)"
+	@echo ""
+	@echo "$(GREEN)⚙️  SETUP$(NC)"
+	@echo "  $(YELLOW)make bootstrap$(NC)            - Terraform bootstrap (ECR, IAM, S3, optional DynamoDB lock table)"
+	@echo "  $(YELLOW)make setup-env$(NC)            - Export env vars for Terraform/deploy (ENV=staging|prod|dev)"
 	@echo ""
 	@echo "$(GREEN)🏗️  TERRAFORM$(NC)"
 	@echo "  $(YELLOW)make tf-validate$(NC)          - Validate Terraform"
-	@echo "  $(YELLOW)make tf-plan$(NC)              - Plan infrastructure (ENV=staging|prod)"
-	@echo "  $(YELLOW)make tf-apply$(NC)             - Apply infrastructure (ENV=staging|prod)"
-	@echo "  $(YELLOW)make tf-destroy$(NC)           - Destroy infrastructure (ENV=staging|prod)"
+	@echo "  $(YELLOW)make tf-plan$(NC)              - Plan infrastructure (ENV=dev|staging|prod)"
+	@echo "  $(YELLOW)make tf-apply$(NC)             - Apply infrastructure (ENV=dev|staging|prod)"
+	@echo "  $(YELLOW)make tf-destroy$(NC)           - Destroy infrastructure (ENV=dev|staging|prod)"
 	@echo ""
 	@echo "$(GREEN)🐳 DOCKER BUILD & PUSH$(NC)"
 	@echo "  $(YELLOW)make docker-build$(NC)         - Build Docker images (ENV=staging|prod)"
@@ -75,7 +132,7 @@ help:
 
 docker-up:
 	@echo "$(GREEN)🐳 Starting Docker Compose services...$(NC)"
-	cd deploy && docker-compose up -d
+	cd deploy && docker compose --env-file .env up -d
 	@echo ""
 	@echo "$(GREEN)✅ Services started!$(NC)"
 	@echo ""
@@ -88,34 +145,34 @@ docker-up:
 
 docker-down:
 	@echo "$(YELLOW)⬇️  Stopping Docker Compose services...$(NC)"
-	cd deploy && docker-compose down
+	cd deploy && docker compose --env-file .env down
 	@echo "$(GREEN)✅ Services stopped$(NC)"
 
 docker-restart:
 	@echo "$(YELLOW)🔄 Restarting Docker Compose services...$(NC)"
-	cd deploy && docker-compose restart
+	cd deploy && docker compose --env-file .env restart
 	@echo "$(GREEN)✅ Services restarted$(NC)"
 
 docker-logs:
-	cd deploy && docker-compose logs -f
+	cd deploy && docker compose --env-file .env logs -f
 
 docker-logs-backend:
-	cd deploy && docker-compose logs -f backend
+	cd deploy && docker compose --env-file .env logs -f backend
 
 docker-logs-frontend:
-	cd deploy && docker-compose logs -f frontend
+	cd deploy && docker compose --env-file .env logs -f frontend
 
 docker-logs-db:
-	cd deploy && docker-compose logs -f db
+	cd deploy && docker compose --env-file .env logs -f postgres
 
 docker-clean:
 	@echo "$(RED)🧹 Removing Docker Compose volumes and containers...$(NC)"
-	cd deploy && docker-compose down -v
+	cd deploy && docker compose --env-file .env down -v
 	@echo "$(GREEN)✅ Cleaned$(NC)"
 
 docker-ps:
 	@echo "$(BLUE)Docker Compose Services:$(NC)"
-	cd deploy && docker-compose ps
+	cd deploy && docker compose --env-file .env ps
 
 # ============================================================================
 # LOCAL DEVELOPMENT (Without Docker)
@@ -123,8 +180,9 @@ docker-ps:
 
 install:
 	@echo "$(GREEN)📦 Installing dependencies...$(NC)"
-	cd backend && pip install -e . && cd ..
-	cd frontend && npm install && cd ..
+	cd backend && pip install -e .
+	cd frontend && npm install
+	cd .github && npm ci --ignore-scripts
 	@echo "$(GREEN)✅ Dependencies installed!$(NC)"
 
 dev:
@@ -149,50 +207,78 @@ frontend:
 # TESTING & CODE QUALITY
 # ============================================================================
 
-test: backend-test-unit backend-test-integration frontend-test
+ensure-backend-venv:
+	@if [ ! -x "$(BACKEND_VENV_PY)" ]; then \
+		echo "$(RED)❌ Backend virtualenv not found at backend/.venv$(NC)"; \
+		echo "$(YELLOW)Create it first: cd backend && python3 -m venv .venv && source .venv/bin/activate$(NC)"; \
+		echo "$(YELLOW)Then install deps (dev): pip install -e . pytest pytest-cov pytest-asyncio$(NC)"; \
+		exit 1; \
+	fi
+
+ensure-frontend-deps:
+	@if [ ! -x "frontend/node_modules/.bin/ng" ]; then \
+		echo "$(YELLOW)⚠️  Frontend dependencies not found. Installing with npm ci...$(NC)"; \
+		cd frontend && npm ci; \
+	fi
+
+test: ensure-backend-venv backend-test-unit backend-test-integration frontend-test
 	@echo "$(GREEN)✅ All tests completed!$(NC)"
 
-backend-test: backend-test-unit backend-test-integration
+backend-test: ensure-backend-venv backend-test-unit backend-test-integration
 	@echo "$(GREEN)✅ All backend tests passed!$(NC)"
 
-backend-test-unit:
+backend-test-unit: ensure-backend-venv
 	@echo "$(GREEN)🧪 Running backend unit tests (no DB)...$(NC)"
-	cd backend && python -m pytest tests/unit -m unit -v --tb=short --cov=app --cov-report=html
+	cd backend && .venv/bin/python -m pytest -c pytest.ini tests/unit -m unit -v --tb=short --cov=app --cov-report=html
 	@echo "$(GREEN)✅ Unit tests passed!$(NC)"
 	@echo "$(BLUE)Coverage report: backend/htmlcov/index.html$(NC)"
 
-backend-test-integration:
+backend-test-integration: ensure-backend-venv
 	@echo "$(GREEN)🧪 Running backend integration tests (with real DB)...$(NC)"
-	cd backend && python -m pytest tests/integration -m integration -v --tb=short
+	cd backend && .venv/bin/python -m pytest -c pytest.ini tests/integration -m integration -v --tb=short
 	@echo "$(GREEN)✅ Integration tests passed!$(NC)"
 
-backend-test-coverage:
+backend-test-coverage: ensure-backend-venv
 	@echo "$(GREEN)🧪 Running all backend tests with coverage report...$(NC)"
-	cd backend && python -m pytest tests/unit tests/integration -v --tb=short --cov=app --cov-report=html --cov-report=term-missing
+	cd backend && .venv/bin/python -m pytest -c pytest.ini tests/unit tests/integration -v --tb=short --cov=app --cov-report=html --cov-report=term-missing
 	@echo "$(GREEN)✅ Tests completed!$(NC)"
 	@echo "$(BLUE)Coverage report: backend/htmlcov/index.html$(NC)"
 
-frontend-test:
+frontend-test: ensure-frontend-deps
 	@echo "$(GREEN)🧪 Running frontend tests...$(NC)"
-	cd frontend && npm run test -- --watch=false --coverage
+	cd frontend && npm exec -- ng test --watch=false --code-coverage
 	@echo "$(GREEN)✅ Frontend tests passed!$(NC)"
 
-backend-validate-tests:
+backend-validate-tests: ensure-backend-venv
 	@echo "$(GREEN)✓ Validating test configuration...$(NC)"
-	cd backend && python validate_tests.py
+	cd backend && .venv/bin/python validate_tests.py
 	@echo "$(GREEN)✅ Test configuration valid!$(NC)"
 
 lint:
 	@echo "$(GREEN)🔍 Running linters...$(NC)"
-	cd backend && ruff check app/ --output-format=github
+	cd backend && poetry run ruff check app/ --output-format=github
+	cd backend && poetry run ruff format app/ --check
 	cd frontend && npm run lint
+	cd frontend && npm run type-check
 	@echo "$(GREEN)✅ Linting complete!$(NC)"
 
-format:
-	@echo "$(GREEN)✨ Formatting code...$(NC)"
-	cd backend && black app/ && ruff check app/ --fix
-	cd frontend && npm run format
-	@echo "$(GREEN)✅ Code formatted!$(NC)"
+frontend-build:
+	@echo "$(GREEN)🔨 Running TypeScript type-check and production build...$(NC)"
+	cd frontend && npm run type-check
+	cd frontend && npm run build
+	@echo "$(GREEN)✅ Frontend build complete!$(NC)"
+
+# ============================================================================
+# ONE-TIME BOOTSTRAP & ENV SETUP
+# ============================================================================
+
+bootstrap:
+	@echo "$(GREEN)🚀 Bootstrapping AWS infrastructure (one-time setup)...$(NC)"
+	@bash scripts/bootstrap.sh
+
+setup-env:
+	@echo "$(GREEN)📝 Setting up environment for ENV=$(ENV)...$(NC)"
+	@ENV=$(ENV) AWS_REGION=$(AWS_REGION) TERRAFORM_STATE_BUCKET=$(TERRAFORM_STATE_BUCKET) TERRAFORM_LOCK_TABLE=$(TERRAFORM_LOCK_TABLE) bash scripts/setup-env.sh
 
 # ============================================================================
 # TERRAFORM OPERATIONS
@@ -203,19 +289,16 @@ tf-validate:
 	@bash scripts/terraform-validate.sh
 
 tf-plan:
-	@if [ -z "$(ENV)" ]; then echo "$(RED)❌ ENV not set. Usage: make tf-plan ENV=staging$(NC)"; exit 1; fi
 	@echo "$(GREEN)📋 Planning Terraform for ENV=$(ENV)...$(NC)"
-	@bash scripts/terraform-plan.sh
+	@ENV=$(ENV) AWS_REGION=$(AWS_REGION) TERRAFORM_STATE_BUCKET=$(TERRAFORM_STATE_BUCKET) TERRAFORM_LOCK_TABLE=$(TERRAFORM_LOCK_TABLE) bash scripts/terraform-plan.sh
 
 tf-apply:
-	@if [ -z "$(ENV)" ]; then echo "$(RED)❌ ENV not set. Usage: make tf-apply ENV=staging$(NC)"; exit 1; fi
 	@echo "$(GREEN)🚀 Applying Terraform for ENV=$(ENV)...$(NC)"
-	@bash scripts/terraform-apply.sh
+	@ENV=$(ENV) AWS_REGION=$(AWS_REGION) TERRAFORM_STATE_BUCKET=$(TERRAFORM_STATE_BUCKET) TERRAFORM_LOCK_TABLE=$(TERRAFORM_LOCK_TABLE) bash scripts/terraform-apply.sh
 
 tf-destroy:
-	@if [ -z "$(ENV)" ]; then echo "$(RED)❌ ENV not set. Usage: make tf-destroy ENV=staging$(NC)"; exit 1; fi
 	@echo "$(RED)⚠️  Destroying Terraform infrastructure for ENV=$(ENV)...$(NC)"
-	@bash scripts/terraform-destroy.sh
+	@ENV=$(ENV) AWS_REGION=$(AWS_REGION) TERRAFORM_STATE_BUCKET=$(TERRAFORM_STATE_BUCKET) TERRAFORM_LOCK_TABLE=$(TERRAFORM_LOCK_TABLE) bash scripts/terraform-destroy.sh
 
 # ============================================================================
 # DOCKER BUILD & PUSH
@@ -223,13 +306,21 @@ tf-destroy:
 
 docker-build:
 	@if [ -z "$(ENV)" ]; then echo "$(RED)❌ ENV not set. Usage: make docker-build ENV=staging$(NC)"; exit 1; fi
-	@echo "$(GREEN)🔨 Building Docker images for ENV=$(ENV)...$(NC)"
-	@bash scripts/docker-build.sh
+	@echo "$(GREEN)🔨 Building Docker images for ENV=$(ENV) (platform=$(DOCKER_PLATFORM))...$(NC)"
+	docker buildx build --platform $(DOCKER_PLATFORM) --provenance=false --sbom=false --build-arg BUILD_ENV=$(ENV) -t mypythonproject1/backend:$(ENV) --load ./backend
+	docker buildx build --platform $(DOCKER_PLATFORM) --provenance=false --sbom=false --build-arg BUILD_ENV=$(ENV) -t mypythonproject1/frontend:$(ENV) --load ./frontend
+	@echo "$(GREEN)✅ Docker images built$(NC)"
 
 docker-push:
 	@if [ -z "$(ENV)" ]; then echo "$(RED)❌ ENV not set. Usage: make docker-push ENV=staging$(NC)"; exit 1; fi
-	@echo "$(GREEN)📤 Pushing Docker images for ENV=$(ENV)...$(NC)"
-	@bash scripts/docker-build.sh push
+	@if [ -z "$(AWS_ACCOUNT_ID)" ]; then echo "$(RED)❌ Unable to detect AWS_ACCOUNT_ID — check AWS credentials$(NC)"; exit 1; fi
+	@echo "$(GREEN)📤 Pushing Docker images to ECR for ENV=$(ENV)...$(NC)"
+	aws ecr get-login-password --region $(AWS_REGION) | docker login --username AWS --password-stdin $(AWS_ACCOUNT_ID).dkr.ecr.$(AWS_REGION).amazonaws.com
+	docker tag mypythonproject1/backend:$(ENV) $(AWS_ACCOUNT_ID).dkr.ecr.$(AWS_REGION).amazonaws.com/mypythonproject1/backend:$(ENV)
+	docker tag mypythonproject1/frontend:$(ENV) $(AWS_ACCOUNT_ID).dkr.ecr.$(AWS_REGION).amazonaws.com/mypythonproject1/frontend:$(ENV)
+	docker push $(AWS_ACCOUNT_ID).dkr.ecr.$(AWS_REGION).amazonaws.com/mypythonproject1/backend:$(ENV)
+	docker push $(AWS_ACCOUNT_ID).dkr.ecr.$(AWS_REGION).amazonaws.com/mypythonproject1/frontend:$(ENV)
+	@echo "$(GREEN)✅ Images pushed to ECR$(NC)"
 
 # ============================================================================
 # ECS DEPLOYMENT
@@ -238,8 +329,18 @@ docker-push:
 ecs-deploy:
 	@if [ -z "$(ENV)" ] || [ -z "$(IMAGE_TAG)" ]; then \
 		echo "$(RED)❌ Missing parameters. Usage: make ecs-deploy ENV=staging IMAGE_TAG=sha-abc123$(NC)"; exit 1; fi
-	@echo "$(GREEN)🚀 Deploying to ECS (ENV=$(ENV), IMAGE_TAG=$(IMAGE_TAG))...$(NC)"
-	@bash scripts/ecs-deploy.sh
+	@echo "$(GREEN)🚀 Deploying to ECS (cluster=$(ECS_CLUSTER), ENV=$(ENV), IMAGE_TAG=$(IMAGE_TAG))...$(NC)"
+	aws ecs update-service \
+	  --cluster  $(ECS_CLUSTER) \
+	  --service  $(ECS_SERVICE_BACKEND) \
+	  --force-new-deployment \
+	  --region   $(AWS_REGION)
+	aws ecs update-service \
+	  --cluster  $(ECS_CLUSTER) \
+	  --service  $(ECS_SERVICE_FRONTEND) \
+	  --force-new-deployment \
+	  --region   $(AWS_REGION)
+	@echo "$(GREEN)✅ ECS deployment triggered (run 'make setup-env ENV=$(ENV)' to verify cluster/service names)$(NC)"
 
 # ============================================================================
 # FULL DEPLOYMENT ORCHESTRATION

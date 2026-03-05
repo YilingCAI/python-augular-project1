@@ -124,10 +124,10 @@ jobs:
         # Secrets and variables → Variables) to match config/.env.test.
         # Reference: config/.env.test — DATABASE_USER / DATABASE_PASSWORD / DATABASE_NAME / DATABASE_PORT
         env:
-            POSTGRES_USER:     ${{ vars.DATABASE_USER }}
-            POSTGRES_PASSWORD: ${{ vars.DATABASE_PASSWORD }}
-            POSTGRES_DB:       ${{ vars.DATABASE_NAME }}
-            POSTGRES_PORT:     ${{ vars.DATABASE_PORT }}
+            POSTGRES_USER:     ${{ secrets.DATABASE_USER }}
+            POSTGRES_PASSWORD: ${{ secrets.DATABASE_PASSWORD }}
+            POSTGRES_DB:       ${{ secrets.DATABASE_NAME }}
+            POSTGRES_PORT:     ${{ secrets.DATABASE_PORT }}
         services:
             postgres:
                 image: postgres:16-alpine
@@ -136,12 +136,13 @@ jobs:
                     POSTGRES_PASSWORD: ${{ env.POSTGRES_PASSWORD }}
                     POSTGRES_DB:       ${{ env.POSTGRES_DB }}
                 options: >-
-                    --health-cmd pg_isready
+                    --health-cmd pg_is ready
                     --health-interval 10s
                     --health-timeout 5s
                     --health-retries 5
                 ports:
                     - ${{ env.POSTGRES_PORT }}:5432
+                    
 
         steps:
             - uses: actions/checkout@v4
@@ -154,7 +155,7 @@ jobs:
 
             - uses: actions/setup-python@v5
               with:
-                  python-version: "3.12"
+                  python-version-file: backend/.python-version
 
             - name: Cache Poetry
               uses: actions/cache@v4
@@ -319,7 +320,7 @@ jobs:
 
             - name: Snyk Python
               id: snyk-python
-              uses: snyk/actions/python-3.12@master
+              uses: snyk/actions/python@master
               env:
                   SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
               with:

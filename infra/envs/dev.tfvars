@@ -13,7 +13,7 @@ app_port              = 8000
 # RDS
 db_name                  = "gamedb"
 db_username              = "postgres"
-db_engine_version        = "16.1"
+db_engine_version        = "17.6"
 db_instance_class        = "db.t3.micro"
 db_allocated_storage     = 20
 db_max_allocated_storage = 100
@@ -22,9 +22,12 @@ multi_az                 = false
 log_retention_days       = 3
 
 # ECS
+image_tag                 = "dev"
+frontend_image_tag        = "dev"
 task_cpu                  = "256"
 task_memory               = "512"
 desired_count             = 1
+frontend_desired_count    = 1
 min_capacity              = 1
 max_capacity              = 3
 target_cpu_utilization    = 70
@@ -35,7 +38,7 @@ health_check_path = "/health"
 certificate_arn   = ""
 
 # JWT (provide during terraform apply)
-# jwt_secret_key = "your-secret-key-here"
+jwt_secret_key = "cR3QvM7K1Rr6O4M1kXo5pQzF9vM3eS9uZ5aXK1hYbJt8g2YQ7pP9kV4cFh6D0nW8HkLm2SxAqTzB5N7uC"
 
 # Debug
 debug = true
