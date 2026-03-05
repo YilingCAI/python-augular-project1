@@ -50,6 +50,7 @@ TFVARS_AWS_REGION := $(shell awk -F'=' '/^aws_region[[:space:]]*=/{gsub(/["[:spa
 
 PROJECT_NAME := $(or $(TFVARS_PROJECT_NAME),$(PROJECT_NAME),mypythonproject1)
 AWS_REGION := $(or $(TFVARS_AWS_REGION),$(AWS_REGION),us-east-1)
+DOCKER_PLATFORM ?= linux/amd64
 
 ECS_CLUSTER ?= $(PROJECT_NAME)-cluster-$(ENV)
 ECS_SERVICE_BACKEND ?= backend-service-$(ENV)
@@ -98,7 +99,7 @@ help:
 	@echo "  $(YELLOW)make lint$(NC)                 - Ruff lint+format-check (backend) + ESLint + type-check (frontend)"
 	@echo ""
 	@echo "$(GREEN)⚙️  SETUP$(NC)"
-	@echo "  $(YELLOW)make bootstrap$(NC)            - One-time AWS infra bootstrap (ECR, IAM, S3, DynamoDB)"
+	@echo "  $(YELLOW)make bootstrap$(NC)            - Terraform bootstrap (ECR, IAM, S3, optional DynamoDB lock table)"
 	@echo "  $(YELLOW)make setup-env$(NC)            - Export env vars for Terraform/deploy (ENV=staging|prod|dev)"
 	@echo ""
 	@echo "$(GREEN)🏗️  TERRAFORM$(NC)"
@@ -305,9 +306,9 @@ tf-destroy:
 
 docker-build:
 	@if [ -z "$(ENV)" ]; then echo "$(RED)❌ ENV not set. Usage: make docker-build ENV=staging$(NC)"; exit 1; fi
-	@echo "$(GREEN)🔨 Building Docker images for ENV=$(ENV)...$(NC)"
-	docker build --build-arg BUILD_ENV=$(ENV) -t mypythonproject1/backend:$(ENV) ./backend
-	docker build --build-arg BUILD_ENV=$(ENV) -t mypythonproject1/frontend:$(ENV) ./frontend
+	@echo "$(GREEN)🔨 Building Docker images for ENV=$(ENV) (platform=$(DOCKER_PLATFORM))...$(NC)"
+	docker buildx build --platform $(DOCKER_PLATFORM) --provenance=false --sbom=false --build-arg BUILD_ENV=$(ENV) -t mypythonproject1/backend:$(ENV) --load ./backend
+	docker buildx build --platform $(DOCKER_PLATFORM) --provenance=false --sbom=false --build-arg BUILD_ENV=$(ENV) -t mypythonproject1/frontend:$(ENV) --load ./frontend
 	@echo "$(GREEN)✅ Docker images built$(NC)"
 
 docker-push:

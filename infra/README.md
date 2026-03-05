@@ -68,6 +68,14 @@ Notes:
 3. Create IAM roles trusted for GitHub Environments (`staging`, `production`)
 4. Create ECR repositories for backend/frontend
 
+Recommended bootstrap path in this repo:
+
+```bash
+make bootstrap
+```
+
+This runs the dedicated stack in `infra/bootstrap`.
+
 ## Local usage
 
 ```bash
@@ -103,5 +111,7 @@ terraform plan -var-file="envs/staging.tfvars"
 - `envs/staging.tfvars`: staging sizing/capacity
 - `envs/prod.tfvars`: production sizing/capacity
 - `envs/dev.tfvars`: developer/shared lower-cost setup
+
+Note for `dev`: ECS desired counts are intentionally set to `0` so first-time `terraform apply` succeeds even before ECR images are pushed. After pushing images, scale up by setting `desired_count` / `frontend_desired_count` (and `min_capacity`) above `0`.
 
 Keep shared structure in modules and only vary environment inputs in tfvars.

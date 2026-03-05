@@ -122,6 +122,18 @@ At minimum, create:
 3. IAM roles assumed by GitHub Actions environments (`staging`, `production`)
 4. ECR repositories for backend/frontend images
 
+Run bootstrap:
+
+```bash
+make bootstrap
+```
+
+Optional inputs:
+
+```bash
+GITHUB_ORG=<org> GITHUB_REPO=<repo> AWS_REGION=us-east-1 make bootstrap
+```
+
 See `infra/README.md` for full bootstrap and IAM guidance.
 
 ## Versioning

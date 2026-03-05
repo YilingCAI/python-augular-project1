@@ -23,9 +23,11 @@ log_retention_days       = 3
 
 # ECS
 image_tag                 = "dev"
+frontend_image_tag        = "dev"
 task_cpu                  = "256"
 task_memory               = "512"
 desired_count             = 1
+frontend_desired_count    = 1
 min_capacity              = 1
 max_capacity              = 3
 target_cpu_utilization    = 70

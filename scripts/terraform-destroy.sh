@@ -19,7 +19,7 @@
 #   make tf-destroy ENV=staging
 #
 # Environment variables:
-#   ENV                     REQUIRED — target environment: dev | staging | prod
+#   ENV                     REQUIRED — target environment: dev | staging
 #   TERRAFORM_STATE_BUCKET  REQUIRED — S3 bucket holding Terraform state
 #   AWS_REGION              REQUIRED — AWS region
 #   TF_ROOT                 optional — Terraform directory  (default: ./infra)
@@ -43,6 +43,12 @@ NC='\033[0m' # No Color
 
 if [ -z "${ENV:-}" ]; then
     echo -e "${RED}❌ ENV not set${NC}"
+    exit 1
+fi
+
+if [[ "${ENV}" =~ ^(prod|production)$ ]]; then
+    echo -e "${RED}❌ Local production runs are disabled.${NC}"
+    echo -e "${YELLOW}Use GitHub Actions release workflow for production infrastructure changes.${NC}"
     exit 1
 fi
 

@@ -200,7 +200,7 @@ resource "aws_kms_key" "cloudwatch_logs" {
 # CloudWatch Log Group for RDS with KMS encryption and 1-year retention (CKV_AWS_158, CKV_AWS_338)
 resource "aws_cloudwatch_log_group" "rds" {
   name              = "/aws/rds/${var.project_name}"
-  retention_in_days = 365
+  retention_in_days = var.log_retention_days
 
   tags = {
     Name = "${var.project_name}-rds-logs"

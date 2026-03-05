@@ -20,7 +20,7 @@ resource "aws_kms_key" "ecs_logs" {
 # CloudWatch Log Group for ECS with KMS encryption and 1-year retention (CKV_AWS_158, CKV_AWS_338)
 resource "aws_cloudwatch_log_group" "ecs" {
   name              = "/ecs/${var.project_name}"
-  retention_in_days = 365
+  retention_in_days = var.log_retention_days
 
   tags = {
     Name = "${var.project_name}-ecs-logs"

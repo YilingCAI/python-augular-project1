@@ -6,8 +6,8 @@
 # plan produced by terraform-plan.sh.  If no plan file exists the plan script
 # is invoked automatically first.
 #
-# Production safeguard: deployments to ENV=prod require the operator to type
-# "yes" at an interactive confirmation prompt before any changes are applied.
+# Production safeguard: local production execution is disabled. Production
+# changes must run through GitHub Actions workflows.
 #
 # After a successful apply, Terraform outputs are exported to
 # /tmp/tf-outputs-<ENV>.json.  If jq is available, ECS_CLUSTER and
@@ -18,7 +18,7 @@
 #   make tf-apply ENV=staging
 #
 # Environment variables:
-#   ENV                     REQUIRED — target environment: staging | prod
+#   ENV                     REQUIRED — target environment: dev | staging
 #   TERRAFORM_STATE_BUCKET  REQUIRED — S3 bucket holding Terraform state
 #   AWS_REGION              REQUIRED — AWS region
 #   TF_ROOT                 optional — Terraform directory  (default: ./infra)
@@ -45,6 +45,12 @@ if [ -z "${ENV:-}" ]; then
     exit 1
 fi
 
+if [[ "${ENV}" =~ ^(prod|production)$ ]]; then
+    echo -e "${RED}❌ Local production runs are disabled.${NC}"
+    echo -e "${YELLOW}Use GitHub Actions release workflow for production infrastructure changes.${NC}"
+    exit 1
+fi
+
 echo -e "${BLUE}🚀 Terraform Apply for ${ENV}${NC}"
 
 # ============================================================================
@@ -60,21 +66,6 @@ if [ ! -f "$TFPLAN_FILE" ]; then
     echo -e "${YELLOW}⚠️  Plan not found: $TFPLAN_FILE${NC}"
     echo "   Running terraform plan first..."
     bash scripts/terraform-plan.sh
-fi
-
-# ============================================================================
-# Production Confirmation
-# ============================================================================
-
-if [ "$ENV" = "prod" ]; then
-    echo -e "${RED}🚨 PRODUCTION ENVIRONMENT 🚨${NC}"
-    echo -e "${YELLOW}This will modify PRODUCTION infrastructure${NC}"
-    echo ""
-    read -p "Type 'yes' to continue with production apply: " confirm
-    if [ "$confirm" != "yes" ]; then
-        echo -e "${YELLOW}❌ Apply cancelled${NC}"
-        exit 1
-    fi
 fi
 
 # ============================================================================

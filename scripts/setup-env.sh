@@ -17,11 +17,11 @@
 #   make setup-env ENV=staging
 #
 # Environment variables:
-#   ENV              REQUIRED — target environment: dev | staging | prod
+#   ENV              REQUIRED — target environment: dev | staging | prod | production
 #   AWS_REGION       optional — AWS region           (default: us-east-1)
 #   AWS_ACCOUNT_ID   optional — used to build ECR registry URL
 #   TERRAFORM_STATE_BUCKET  optional — override default S3 bucket name
-#   TERRAFORM_LOCK_TABLE    optional — override default DynamoDB table name
+#   TERRAFORM_LOCK_TABLE    optional — (deprecated) DynamoDB table name
 #
 # Exports set by this script:
 #   AWS_REGION, TF_ROOT, TF_VAR_environment, TF_VAR_aws_region,
@@ -56,9 +56,14 @@ if [ -z "$ENV" ]; then
     exit 0
 fi
 
+# Normalize aliases
+if [ "$ENV" = "production" ]; then
+    ENV="prod"
+fi
+
 # Validate environment
 if [[ ! "$ENV" =~ ^(dev|staging|prod)$ ]]; then
-    echo -e "${RED}❌ Invalid ENV: $ENV. Must be dev, staging, or prod${NC}"
+    echo -e "${RED}❌ Invalid ENV: $ENV. Must be dev, staging, prod, or production${NC}"
     exit 1
 fi
 
@@ -101,26 +106,32 @@ export TF_VAR_lock_table="${TERRAFORM_LOCK_TABLE}"
 
 echo -e "${GREEN}✓${NC} TF_ROOT: $TF_ROOT"
 echo -e "${GREEN}✓${NC} Terraform State Bucket: $TERRAFORM_STATE_BUCKET"
-echo -e "${GREEN}✓${NC} Terraform Lock Table: $TERRAFORM_LOCK_TABLE"
+echo -e "${GREEN}✓${NC} Terraform Lock Table (deprecated): $TERRAFORM_LOCK_TABLE"
 
 # ============================================================================
 # Docker Configuration
 # ============================================================================
 
 # ECR Registry
-if [ -z "$AWS_ACCOUNT_ID" ]; then
+if [ -z "${AWS_ACCOUNT_ID:-}" ]; then
     echo -e "${YELLOW}⚠️  AWS_ACCOUNT_ID not detected; ECR registry may be incomplete${NC}"
 fi
 
-ECR_REGISTRY="${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com"
-ECR_REPOSITORY_BACKEND="${ECR_REGISTRY}/mypythonproject1/backend"
-ECR_REPOSITORY_FRONTEND="${ECR_REGISTRY}/mypythonproject1/frontend"
+if [ -n "${AWS_ACCOUNT_ID:-}" ]; then
+    ECR_REGISTRY="${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com"
+    ECR_REPOSITORY_BACKEND="${ECR_REGISTRY}/mypythonproject1/backend"
+    ECR_REPOSITORY_FRONTEND="${ECR_REGISTRY}/mypythonproject1/frontend"
+else
+    ECR_REGISTRY=""
+    ECR_REPOSITORY_BACKEND=""
+    ECR_REPOSITORY_FRONTEND=""
+fi
 
 export ECR_REGISTRY
 export ECR_REPOSITORY_BACKEND
 export ECR_REPOSITORY_FRONTEND
 
-echo -e "${GREEN}✓${NC} ECR_REGISTRY: $ECR_REGISTRY"
+echo -e "${GREEN}✓${NC} ECR_REGISTRY: ${ECR_REGISTRY:-<unset>}"
 
 # ============================================================================
 # ECS Configuration
