@@ -1,6 +1,6 @@
 # GitHub Actions CI/CD Guide
 
-Reference for CI validation and deployment workflows in this repository.
+Reference for CI validation and app deployment workflows in this repository.
 
 ## Workflows
 
@@ -8,6 +8,8 @@ Reference for CI validation and deployment workflows in this repository.
 - `staging.yml` — staging build/apply/deploy/smoke-test
 - `release.yml` — semantic release and production deploy flow
 - `_smoke-test.yml` — reusable post-deploy health check
+
+Terraform source of truth now lives in sibling repository `mypythonproject1-infra`.
 
 ## `ci.yml`
 
@@ -24,7 +26,7 @@ Responsibilities:
 - Frontend lint + type-check + build
 - Trivy + GitGuardian scan
 - Snyk dependency audit
-- Terraform fmt/validate/plan (no apply)
+- Terraform fmt/validate/plan (no apply, executed against checked-out `mypythonproject1-infra`)
 - Final `quality-gate` status
 
 ## `staging.yml`
@@ -37,7 +39,7 @@ Triggers:
 Responsibilities:
 
 - Build/push backend and frontend images to ECR
-- Apply staging Terraform
+- Apply staging Terraform from checked-out `mypythonproject1-infra`
 - Force ECS rolling deploy for both services
 - Run reusable smoke test against `vars.APP_URL`
 
@@ -56,7 +58,7 @@ Two flows:
 2. Production deploy flow
    - Trigger: tag push `v*`
    - Builds/pushes images to ECR
-   - Runs Terraform apply for production
+   - Runs Terraform apply for production from checked-out `mypythonproject1-infra`
    - Forces ECS deploy
    - Runs smoke test against `vars.APP_URL`
 
@@ -71,7 +73,6 @@ Config model:
 - `DATABASE_USER`
 - `DATABASE_PASSWORD`
 - `DATABASE_NAME`
-- `DATABASE_PORT`
 - `AWS_ROLE_TO_ASSUME`
 - `GITGUARDIAN_API_KEY`
 - `SNYK_TOKEN`
@@ -112,3 +113,4 @@ Infrastructure init now uses `use_lockfile=true` for backend locking.
 - `.github/workflows/staging.yml`
 - `.github/workflows/release.yml`
 - `.github/workflows/_smoke-test.yml`
+- `../mypythonproject1-infra/.github/workflows/terraform-infra.yml`

@@ -36,14 +36,15 @@ NC := \033[0m # No Color
 # ============================================================================
 
 ENV_FILE := deploy/.env
-DEV_TFVARS_FILE := infra/envs/dev.tfvars
+INFRA_ROOT ?= ../mypythonproject1-infra
+DEV_TFVARS_FILE := $(INFRA_ROOT)/envs/dev.tfvars
 
 -include $(ENV_FILE)
 
 # Prefer tfvars as source of truth for infra variables.
 TFVARS_ENV := $(shell awk -F'=' '/^environment[[:space:]]*=/{gsub(/["[:space:]]/,"",$$2); print $$2; exit}' $(DEV_TFVARS_FILE) 2>/dev/null)
 ENV ?= $(or $(TFVARS_ENV),dev)
-TFVARS_FILE = infra/envs/$(ENV).tfvars
+TFVARS_FILE = $(INFRA_ROOT)/envs/$(ENV).tfvars
 
 TFVARS_PROJECT_NAME := $(shell awk -F'=' '/^project_name[[:space:]]*=/{gsub(/["[:space:]]/,"",$$2); print $$2; exit}' $(TFVARS_FILE) 2>/dev/null || awk -F'=' '/^project_name[[:space:]]*=/{gsub(/["[:space:]]/,"",$$2); print $$2; exit}' $(DEV_TFVARS_FILE) 2>/dev/null)
 TFVARS_AWS_REGION := $(shell awk -F'=' '/^aws_region[[:space:]]*=/{gsub(/["[:space:]]/,"",$$2); print $$2; exit}' $(TFVARS_FILE) 2>/dev/null || awk -F'=' '/^aws_region[[:space:]]*=/{gsub(/["[:space:]]/,"",$$2); print $$2; exit}' $(DEV_TFVARS_FILE) 2>/dev/null)
@@ -286,19 +287,19 @@ setup-env:
 
 tf-validate:
 	@echo "$(GREEN)📋 Validating Terraform...$(NC)"
-	@bash scripts/terraform-validate.sh
+	@TF_ROOT=$(INFRA_ROOT) bash scripts/terraform-validate.sh
 
 tf-plan:
 	@echo "$(GREEN)📋 Planning Terraform for ENV=$(ENV)...$(NC)"
-	@ENV=$(ENV) AWS_REGION=$(AWS_REGION) TERRAFORM_STATE_BUCKET=$(TERRAFORM_STATE_BUCKET) TERRAFORM_LOCK_TABLE=$(TERRAFORM_LOCK_TABLE) bash scripts/terraform-plan.sh
+	@ENV=$(ENV) TF_ROOT=$(INFRA_ROOT) AWS_REGION=$(AWS_REGION) TERRAFORM_STATE_BUCKET=$(TERRAFORM_STATE_BUCKET) TERRAFORM_LOCK_TABLE=$(TERRAFORM_LOCK_TABLE) bash scripts/terraform-plan.sh
 
 tf-apply:
 	@echo "$(GREEN)🚀 Applying Terraform for ENV=$(ENV)...$(NC)"
-	@ENV=$(ENV) AWS_REGION=$(AWS_REGION) TERRAFORM_STATE_BUCKET=$(TERRAFORM_STATE_BUCKET) TERRAFORM_LOCK_TABLE=$(TERRAFORM_LOCK_TABLE) bash scripts/terraform-apply.sh
+	@ENV=$(ENV) TF_ROOT=$(INFRA_ROOT) AWS_REGION=$(AWS_REGION) TERRAFORM_STATE_BUCKET=$(TERRAFORM_STATE_BUCKET) TERRAFORM_LOCK_TABLE=$(TERRAFORM_LOCK_TABLE) bash scripts/terraform-apply.sh
 
 tf-destroy:
 	@echo "$(RED)⚠️  Destroying Terraform infrastructure for ENV=$(ENV)...$(NC)"
-	@ENV=$(ENV) AWS_REGION=$(AWS_REGION) TERRAFORM_STATE_BUCKET=$(TERRAFORM_STATE_BUCKET) TERRAFORM_LOCK_TABLE=$(TERRAFORM_LOCK_TABLE) bash scripts/terraform-destroy.sh
+	@ENV=$(ENV) TF_ROOT=$(INFRA_ROOT) AWS_REGION=$(AWS_REGION) TERRAFORM_STATE_BUCKET=$(TERRAFORM_STATE_BUCKET) TERRAFORM_LOCK_TABLE=$(TERRAFORM_LOCK_TABLE) bash scripts/terraform-destroy.sh
 
 # ============================================================================
 # DOCKER BUILD & PUSH

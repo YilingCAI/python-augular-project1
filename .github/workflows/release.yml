@@ -95,6 +95,12 @@ jobs:
         with:
           ref: ${{ github.ref }}
 
+      - name: Checkout infra repository
+        uses: actions/checkout@v4
+        with:
+          repository: ${{ github.repository_owner }}/mypythonproject1-infra
+          path: mypythonproject1-infra
+
       - name: Resolve version tag
         id: ver
         run: |
@@ -167,7 +173,7 @@ jobs:
       - name: Terraform apply
         uses: ./.github/actions/terraform/apply
         with:
-          working-directory: ./infra
+          working-directory: ./mypythonproject1-infra
           terraform-version: ${{ secrets.TF_VERSION }}
           environment: production
           aws-region: ${{ secrets.AWS_REGION }}
@@ -190,6 +196,12 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Checkout infra repository
+        uses: actions/checkout@v4
+        with:
+          repository: ${{ github.repository_owner }}/mypythonproject1-infra
+          path: mypythonproject1-infra
+
       - name: Authenticate with AWS
         uses: ./.github/actions/aws-auth
         with:
@@ -198,7 +210,7 @@ jobs:
 
       - name: Force new ECS deployment
         run: |
-          PROJECT_NAME=$(awk -F'=' '/^project_name[[:space:]]*=/{gsub(/["[:space:]]/,"",$2); print $2; exit}' infra/envs/prod.tfvars)
+          PROJECT_NAME=$(awk -F'=' '/^project_name[[:space:]]*=/{gsub(/["[:space:]]/,"",$2); print $2; exit}' mypythonproject1-infra/envs/prod.tfvars)
           CLUSTER_NAME="${PROJECT_NAME}-cluster"
           if [[ "${{ matrix.service }}" == "backend" ]]; then
             SERVICE_NAME="${PROJECT_NAME}-service"
@@ -215,7 +227,7 @@ jobs:
       - name: Wait for service stability
         timeout-minutes: 15
         run: |
-          PROJECT_NAME=$(awk -F'=' '/^project_name[[:space:]]*=/{gsub(/["[:space:]]/,"",$2); print $2; exit}' infra/envs/prod.tfvars)
+          PROJECT_NAME=$(awk -F'=' '/^project_name[[:space:]]*=/{gsub(/["[:space:]]/,"",$2); print $2; exit}' mypythonproject1-infra/envs/prod.tfvars)
           CLUSTER_NAME="${PROJECT_NAME}-cluster"
           if [[ "${{ matrix.service }}" == "backend" ]]; then
             SERVICE_NAME="${PROJECT_NAME}-service"

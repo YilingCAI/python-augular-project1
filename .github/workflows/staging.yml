@@ -100,6 +100,12 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Checkout infra repository
+        uses: actions/checkout@v4
+        with:
+          repository: ${{ github.repository_owner }}/mypythonproject1-infra
+          path: mypythonproject1-infra
+
       - name: Load staging environment
         run: grep -v '^\s*#' config/.env.staging | grep -v '^\s*$' >> "$GITHUB_ENV"
 
@@ -119,7 +125,7 @@ jobs:
       - name: Terraform apply
         uses: ./.github/actions/terraform/apply
         with:
-          working-directory: ./infra
+          working-directory: ./mypythonproject1-infra
           terraform-version: ${{ env.TF_VERSION }}
           environment: staging
           aws-region: ${{ env.AWS_REGION }}
@@ -141,6 +147,12 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Checkout infra repository
+        uses: actions/checkout@v4
+        with:
+          repository: ${{ github.repository_owner }}/mypythonproject1-infra
+          path: mypythonproject1-infra
+
       - name: Load staging environment
         run: grep -v '^\s*#' config/.env.staging | grep -v '^\s*$' >> "$GITHUB_ENV"
 
@@ -152,7 +164,7 @@ jobs:
 
       - name: Force new ECS deployment
         run: |
-          PROJECT_NAME=$(awk -F'=' '/^project_name[[:space:]]*=/{gsub(/["[:space:]]/,"",$2); print $2; exit}' infra/envs/staging.tfvars)
+          PROJECT_NAME=$(awk -F'=' '/^project_name[[:space:]]*=/{gsub(/["[:space:]]/,"",$2); print $2; exit}' mypythonproject1-infra/envs/staging.tfvars)
           CLUSTER_NAME="${PROJECT_NAME}-cluster"
           if [[ "${{ matrix.service }}" == "backend" ]]; then
             SERVICE_NAME="${PROJECT_NAME}-service"
@@ -169,7 +181,7 @@ jobs:
       - name: Wait for service stability
         timeout-minutes: 10
         run: |
-          PROJECT_NAME=$(awk -F'=' '/^project_name[[:space:]]*=/{gsub(/["[:space:]]/,"",$2); print $2; exit}' infra/envs/staging.tfvars)
+          PROJECT_NAME=$(awk -F'=' '/^project_name[[:space:]]*=/{gsub(/["[:space:]]/,"",$2); print $2; exit}' mypythonproject1-infra/envs/staging.tfvars)
           CLUSTER_NAME="${PROJECT_NAME}-cluster"
           if [[ "${{ matrix.service }}" == "backend" ]]; then
             SERVICE_NAME="${PROJECT_NAME}-service"

@@ -100,5 +100,5 @@ make help
 - `README.md`
 - `docs/ARCHITECTURE.md`
 - `docs/TEST_ARCHITECTURE.md`
-- `infra/README.md`
+- `../mypythonproject1-infra/README.md`
 - `.github/GITHUB_ACTIONS_CICD.md`

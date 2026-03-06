@@ -17,7 +17,7 @@ inputs:
   working-directory:
     description: "Terraform working directory"
     required: false
-    default: "./infra"
+    default: "./mypythonproject1-infra"
   terraform-version:
     description: "Terraform version to install"
     required: false

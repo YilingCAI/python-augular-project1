@@ -15,7 +15,7 @@
 #   make tf-validate
 #
 # Environment variables:
-#   PROJECT_ROOT   optional — repo root; TF_ROOT defaults to ./infra
+#   PROJECT_ROOT   optional — app repo root; TF_ROOT defaults to ../mypythonproject1-infra
 #
 # Dependencies:   terraform; tflint (optional — skipped if not on PATH)
 # Caller(s):      make tf-validate  /  .github/actions/terraform/validate
@@ -32,7 +32,8 @@ NC='\033[0m' # No Color
 
 echo -e "${BLUE}🔍 Running Terraform validation...${NC}"
 
-TF_ROOT="${PROJECT_ROOT:-./infra}"
+PROJECT_ROOT="${PROJECT_ROOT:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)}"
+TF_ROOT="${TF_ROOT:-${PROJECT_ROOT}/../mypythonproject1-infra}"
 
 # ============================================================================
 # Terraform Format Check

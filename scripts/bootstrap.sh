@@ -2,7 +2,7 @@
 ###############################################################################
 # bootstrap.sh — Terraform-based AWS bootstrap
 #
-# Applies infra/bootstrap to provision one-time account prerequisites:
+# Applies ../mypythonproject1-infra/bootstrap to provision one-time account prerequisites:
 #   - S3 bucket for Terraform state
 #   - DynamoDB lock table (optional, compatibility mode)
 #   - ECR repositories (backend/frontend)
@@ -25,7 +25,8 @@
 set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-BOOTSTRAP_DIR="${ROOT_DIR}/infra/bootstrap"
+INFRA_ROOT="${INFRA_ROOT:-${ROOT_DIR}/../mypythonproject1-infra}"
+BOOTSTRAP_DIR="${INFRA_ROOT}/bootstrap"
 
 if ! command -v terraform >/dev/null 2>&1; then
   echo "❌ terraform not found in PATH"

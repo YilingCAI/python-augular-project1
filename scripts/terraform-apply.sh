@@ -21,7 +21,7 @@
 #   ENV                     REQUIRED — target environment: dev | staging
 #   TERRAFORM_STATE_BUCKET  REQUIRED — S3 bucket holding Terraform state
 #   AWS_REGION              REQUIRED — AWS region
-#   TF_ROOT                 optional — Terraform directory  (default: ./infra)
+#   TF_ROOT                 optional — Terraform directory  (default: ../mypythonproject1-infra)
 #
 # Dependencies:   terraform; jq (optional — used to parse TF outputs)
 # Caller(s):      make tf-apply
@@ -57,7 +57,8 @@ echo -e "${BLUE}🚀 Terraform Apply for ${ENV}${NC}"
 # Setup
 # ============================================================================
 
-TF_ROOT="${TF_ROOT:-./infra}"
+PROJECT_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+TF_ROOT="${TF_ROOT:-${PROJECT_ROOT}/../mypythonproject1-infra}"
 TFPLAN_FILE="/tmp/tf-plans/tfplan.${ENV}"
 TFVARS_FILE="${TF_ROOT}/envs/${ENV}.tfvars"
 

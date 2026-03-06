@@ -18,11 +18,13 @@ Production-ready full-stack app with FastAPI + Angular + PostgreSQL on AWS ECS F
 .
 ├── backend/          # FastAPI service + alembic + tests
 ├── frontend/         # Angular application
-├── infra/            # Terraform root + modules + env tfvars
 ├── deploy/           # docker-compose local stack
 ├── config/           # env templates and ops guides
 ├── docs/             # architecture / onboarding / testing docs
 └── .github/          # workflows and composite CI/CD actions
+
+Sibling repo:
+../mypythonproject1-infra/   # Terraform root + modules + env tfvars
 ```
 
 ## Local development
@@ -134,7 +136,7 @@ Optional inputs:
 GITHUB_ORG=<org> GITHUB_REPO=<repo> AWS_REGION=us-east-1 make bootstrap
 ```
 
-See `infra/README.md` for full bootstrap and IAM guidance.
+See `../mypythonproject1-infra/README.md` for full bootstrap and IAM guidance.
 
 ## Versioning
 

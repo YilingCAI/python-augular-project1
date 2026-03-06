@@ -86,7 +86,6 @@ jobs:
         outputs:
             backend: ${{ steps.filter.outputs.backend }}
             frontend: ${{ steps.filter.outputs.frontend }}
-            infra: ${{ steps.filter.outputs.infra }}
             ci: ${{ steps.filter.outputs.ci }}
         steps:
             - uses: actions/checkout@v4
@@ -99,8 +98,6 @@ jobs:
                           - 'backend/**'
                       frontend:
                           - 'frontend/**'
-                      infra:
-                          - 'infra/**'
                       ci:
                           - '.github/**'
                           - 'package.json'
@@ -346,7 +343,7 @@ jobs:
         timeout-minutes: 15
         needs: [changes]
         if: |
-            (needs.changes.outputs.infra == 'true' || needs.changes.outputs.ci == 'true') &&
+          needs.changes.outputs.ci == 'true' &&
             github.event_name == 'pull_request'
         strategy:
             matrix:
@@ -359,6 +356,12 @@ jobs:
             id-token: write
         steps:
             - uses: actions/checkout@v4
+
+            - name: Checkout infra repository
+              uses: actions/checkout@v4
+              with:
+                  repository: ${{ github.repository_owner }}/mypythonproject1-infra
+                  path: mypythonproject1-infra
 
             - name: Load CI environment
               run: |
@@ -375,20 +378,20 @@ jobs:
                   aws-region: ${{ env.AWS_REGION }}
 
             - name: Terraform fmt check
-              working-directory: infra
+              working-directory: mypythonproject1-infra
               run: terraform fmt -check -recursive
 
             - name: Terraform init (no remote state — validation only)
-              working-directory: infra
+              working-directory: mypythonproject1-infra
               run: terraform init -backend=false
 
             - name: Terraform validate
-              working-directory: infra
+              working-directory: mypythonproject1-infra
               run: terraform validate
 
             - name: Terraform plan
               id: plan
-              working-directory: infra
+              working-directory: mypythonproject1-infra
               env:
                   TF_VAR_environment: ${{ matrix.environment }}
                   TF_VAR_aws_region: ${{ env.AWS_REGION }}
@@ -402,7 +405,7 @@ jobs:
               with:
                   script: |
                       const fs   = require('fs');
-                      const plan = fs.readFileSync('infra/plan-output.txt', 'utf8').substring(0, 65000);
+                      const plan = fs.readFileSync('mypythonproject1-infra/plan-output.txt', 'utf8').substring(0, 65000);
                       github.rest.issues.createComment({
                         issue_number: context.issue.number,
                         owner: context.repo.owner, repo: context.repo.repo,
@@ -445,7 +448,7 @@ jobs:
                   # Commitlint fails only on PRs (skipped on push)
                   [[ "$CL" == "failure" ]] && { echo "❌ Commitlint failed"; exit 1; }
 
-                  # Terraform plan failure blocks PRs when infra changed
+                  # Terraform plan failure blocks PRs when terraform-plan runs
                   [[ "$TF" == "failure" ]] && { echo "❌ Terraform plan failed"; exit 1; }
 
                   echo "✅ All gates passed"

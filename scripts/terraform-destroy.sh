@@ -22,7 +22,7 @@
 #   ENV                     REQUIRED — target environment: dev | staging
 #   TERRAFORM_STATE_BUCKET  REQUIRED — S3 bucket holding Terraform state
 #   AWS_REGION              REQUIRED — AWS region
-#   TF_ROOT                 optional — Terraform directory  (default: ./infra)
+#   TF_ROOT                 optional — Terraform directory  (default: ../mypythonproject1-infra)
 #
 # Dependencies:   terraform
 # Caller(s):      make tf-destroy
@@ -77,7 +77,8 @@ echo -e "${RED}🗑️  Destroying infrastructure for ${ENV}${NC}"
 # Setup
 # ============================================================================
 
-TF_ROOT="${TF_ROOT:-./infra}"
+PROJECT_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+TF_ROOT="${TF_ROOT:-${PROJECT_ROOT}/../mypythonproject1-infra}"
 TFVARS_FILE="${TF_ROOT}/envs/${ENV}.tfvars"
 
 if [ ! -f "$TFVARS_FILE" ]; then

@@ -83,7 +83,8 @@ echo -e "${GREEN}✓${NC} AWS_REGION: $AWS_REGION"
 # Terraform Configuration
 # ============================================================================
 
-export TF_ROOT="${PROJECT_ROOT}/infra"
+INFRA_ROOT="${INFRA_ROOT:-${PROJECT_ROOT}/../mypythonproject1-infra}"
+export TF_ROOT="${INFRA_ROOT}"
 export TF_VAR_environment="${ENV}"
 export TF_VAR_aws_region="${AWS_REGION}"
 
