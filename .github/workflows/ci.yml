@@ -1,0 +1,385 @@
+###############################################################################
+# CI — Continuous Integration Gate
+###############################################################################
+# Responsibilities:
+#   • Conventional commit linting (PRs only)
+#   • Backend lint + unit/integration tests
+#   • Frontend lint + type-check + build
+#   • Dependency vulnerability audit (Snyk)
+#   • Secret scanning (GitGuardian)
+#   • Filesystem vulnerability scan (Trivy)
+#   • quality-gate job required by branch protection rules
+#
+# NO deployment and NO infrastructure logic lives here.
+# Infrastructure is managed in a separate repo (mypythonproject1-infra or -infra2).
+#
+# Triggers:
+#   • pull_request → main, develop
+#   • push         → develop, main  (post-merge validation)
+#   • workflow_dispatch
+###############################################################################
+name: CI
+
+on:
+    push:
+        branches: [main, develop]
+        paths-ignore:
+            - "docs/**"
+            - "CHANGELOG.md"
+            - "**/*.md"
+    pull_request:
+        branches: [main, develop]
+        types: [opened, synchronize, reopened]
+        paths-ignore:
+            - "docs/**"
+            - "CHANGELOG.md"
+            - "**/*.md"
+    workflow_dispatch:
+
+permissions:
+    contents: read
+    pull-requests: write
+    security-events: write
+    checks: write
+
+# Cancel superseded PR runs; never cancel post-merge runs
+concurrency:
+    group: ci-${{ github.ref }}
+    cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+    # =========================================================================
+    # 1. CONVENTIONAL COMMIT LINTING  (PR only)
+    # =========================================================================
+    commitlint:
+        name: Commitlint
+        runs-on: ubuntu-latest
+        timeout-minutes: 5
+        if: github.event_name == 'pull_request'
+        steps:
+            - uses: actions/checkout@v4
+              with:
+                  fetch-depth: 0
+
+            - uses: actions/setup-node@v4
+              with:
+                  node-version: "22"
+                  cache: "npm"
+
+            - name: Install commitlint
+              run: npm ci --ignore-scripts
+
+            - name: Lint PR commits (base → head)
+              run: |
+                  npx commitlint \
+                    --from ${{ github.event.pull_request.base.sha }} \
+                    --to   ${{ github.event.pull_request.head.sha }} \
+                    --verbose
+
+    # =========================================================================
+    # 2. PATH CHANGE DETECTION
+    # =========================================================================
+    changes:
+        name: Detect Changes
+        runs-on: ubuntu-latest
+        timeout-minutes: 3
+        outputs:
+            backend: ${{ steps.filter.outputs.backend }}
+            frontend: ${{ steps.filter.outputs.frontend }}
+            ci: ${{ steps.filter.outputs.ci }}
+        steps:
+            - uses: actions/checkout@v4
+
+            - id: filter
+              uses: dorny/paths-filter@v3
+              with:
+                  filters: |
+                      backend:
+                          - 'backend/**'
+                      frontend:
+                          - 'frontend/**'
+                      ci:
+                          - '.github/**'
+                          - 'package.json'
+                          - '.commitlintrc.yml'
+
+    # =========================================================================
+    # 3. BACKEND — Lint + Tests
+    # =========================================================================
+    backend-ci:
+        name: Backend CI
+        runs-on: ubuntu-latest
+        timeout-minutes: 20
+        needs: [changes]
+        if: |
+            needs.changes.outputs.backend == 'true' ||
+            needs.changes.outputs.ci == 'true'      ||
+            github.event_name == 'workflow_dispatch'
+        # Job-level env is evaluated before service containers start,
+        # so these vars are available to the postgres service block below.
+        # Values must be set as GitHub Actions Repository Variables (Settings →
+        # Secrets and variables → Variables) to match config/.env.test.
+        # Reference: config/.env.test — DATABASE_USER / DATABASE_PASSWORD / DATABASE_NAME / DATABASE_PORT
+        env:
+            POSTGRES_USER:     ${{ secrets.DATABASE_USER }}
+            POSTGRES_PASSWORD: ${{ secrets.DATABASE_PASSWORD }}
+            POSTGRES_DB:       ${{ secrets.DATABASE_NAME }}
+            POSTGRES_PORT:     ${{ vars.POSTGRES_PORT }}
+        services:
+            postgres:
+                image: postgres:16-alpine
+                env:
+                    POSTGRES_USER:     ${{ env.POSTGRES_USER }}
+                    POSTGRES_PASSWORD: ${{ env.POSTGRES_PASSWORD }}
+                    POSTGRES_DB:       ${{ env.POSTGRES_DB }}
+                options: >-
+                    --health-cmd pg_is ready
+                    --health-interval 10s
+                    --health-timeout 5s
+                    --health-retries 5
+                ports:
+                  - "${{ vars.POSTGRES_PORT }}:5432"
+                    
+
+        steps:
+            - uses: actions/checkout@v4
+
+            - name: Load test environment
+              # Non-secret app vars (DATABASE_*, JWT_ALGORITHM, etc.) and
+              # CI tooling vars (TF_VERSION, REGISTRY) from config/.env.test
+              run: |
+                  grep -v '^\s*#' config/.env.test | grep -v '^\s*$' >> $GITHUB_ENV
+                  echo "POSTGRES_PORT=${{ vars.POSTGRES_PORT }}" >> $GITHUB_ENV
+
+            - uses: actions/setup-python@v5
+              with:
+                  python-version-file: backend/.python-version
+
+            - name: Cache Poetry
+              uses: actions/cache@v4
+              with:
+                  path: |
+                      ~/.cache/pypoetry
+                      ~/.virtualenvs
+                  key: poetry-${{ hashFiles('backend/poetry.lock') }}
+                  restore-keys: poetry-
+
+            - name: Install dependencies
+              working-directory: backend
+              timeout-minutes: 8
+              run: |
+                  python -m pip install --upgrade pip
+                  pip install poetry
+                  poetry config virtualenvs.create false
+                  poetry install --no-root
+
+            - name: Ruff lint
+              working-directory: backend
+              run: |
+                  poetry run ruff check app/ --output-format=github
+                  poetry run ruff format app/ --check
+
+            - name: Unit tests
+              working-directory: backend
+              timeout-minutes: 10
+              run: |
+                  pytest tests/unit -m unit -v \
+                    --cov=app --cov-report=xml --cov-report=html \
+                    --junitxml=test-results-unit.xml \
+                    --maxfail=5 --tb=short
+
+            - name: Integration tests
+              working-directory: backend
+              timeout-minutes: 10
+              run: |
+                  pytest tests/integration -m integration -v \
+                    --cov=app --cov-report=xml --cov-report=html \
+                    --junitxml=test-results-integration.xml \
+                    --maxfail=5 --tb=short
+
+            - name: Upload coverage
+              uses: codecov/codecov-action@v4
+              with:
+                  files: ./backend/coverage.xml
+                  flags: backend
+                  fail_ci_if_error: false
+
+            - name: Publish test results
+              if: always()
+              uses: ./.github/actions/publish-test-results
+              with:
+                  files: |
+                      backend/test-results-unit.xml
+                      backend/test-results-integration.xml
+                  check_name: Backend Test Results
+
+    # =========================================================================
+    # 4. FRONTEND — Lint + Type-check + Build
+    # =========================================================================
+    frontend-ci:
+        name: Frontend CI
+        runs-on: ubuntu-latest
+        timeout-minutes: 20
+        needs: [changes]
+        if: |
+            needs.changes.outputs.frontend == 'true' ||
+            needs.changes.outputs.ci == 'true'       ||
+            github.event_name == 'workflow_dispatch'
+        outputs:
+            eslint-outcome: ${{ steps.eslint.outcome }}
+        steps:
+            - uses: actions/checkout@v4
+
+            - uses: actions/setup-node@v4
+              with:
+                  node-version: "22"
+                  cache: "npm"
+                  cache-dependency-path: frontend/package-lock.json
+
+            - name: Install dependencies
+              working-directory: frontend
+              timeout-minutes: 8
+              run: npm ci --prefer-offline --no-audit
+
+            - name: ESLint
+              id: eslint
+              working-directory: frontend
+              run: npm run lint
+              continue-on-error: true # logged in quality-gate, not a hard failure here
+
+            - name: TypeScript type-check
+              working-directory: frontend
+              run: npm run type-check
+
+            - name: Build
+              working-directory: frontend
+              run: npm run build
+
+            - name: Upload build artifact
+              uses: actions/upload-artifact@v4
+              with:
+                  name: frontend-build-${{ github.sha }}
+                  path: frontend/dist/
+                  retention-days: 1
+
+    # =========================================================================
+    # 5. SECURITY — Filesystem + Secret scanning
+    # =========================================================================
+    security-scan:
+        name: Security Scan
+        runs-on: ubuntu-latest
+        timeout-minutes: 15
+        outputs:
+            gitguardian-outcome: ${{ steps.gitguardian.outcome }}
+        steps:
+            - uses: actions/checkout@v4
+              with:
+                  fetch-depth: 0
+
+            - name: Trivy filesystem scan
+              uses: aquasecurity/trivy-action@master
+              with:
+                  scan-type: "fs"
+                  scan-ref: "."
+                  format: "sarif"
+                  output: "trivy-fs.sarif"
+                  severity: "CRITICAL,HIGH"
+
+            - name: Upload Trivy SARIF
+              uses: github/codeql-action/upload-sarif@v3
+              with:
+                  sarif_file: "trivy-fs.sarif"
+                  category: "trivy-filesystem"
+
+            - name: GitGuardian secret scan
+              id: gitguardian
+              uses: gitguardian/ggshield-action@master
+              env:
+                  GITGUARDIAN_API_KEY: ${{ secrets.GITGUARDIAN_API_KEY }}
+              continue-on-error: true
+
+    # =========================================================================
+    # 6. DEPENDENCY AUDIT (Snyk)
+    # =========================================================================
+    dependency-audit:
+        name: Dependency Audit
+        runs-on: ubuntu-latest
+        timeout-minutes: 10
+        needs: [changes]
+        if: |
+            needs.changes.outputs.backend  == 'true' ||
+            needs.changes.outputs.frontend == 'true' ||
+            github.event_name == 'workflow_dispatch'
+        outputs:
+            snyk-python-outcome: ${{ steps.snyk-python.outcome }}
+            snyk-node-outcome: ${{ steps.snyk-node.outcome }}
+        steps:
+            - uses: actions/checkout@v4
+
+            - name: Snyk Python
+              id: snyk-python
+              uses: snyk/actions/python@master
+              env:
+                  SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
+              with:
+                  args: backend --severity-threshold=high
+              continue-on-error: true
+
+            - name: Snyk Node.js
+              id: snyk-node
+              uses: snyk/actions/node@master
+              env:
+                  SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
+              with:
+                  args: frontend --severity-threshold=high
+              continue-on-error: true
+
+    # =========================================================================
+    # 7. QUALITY GATE — single status required by branch protection
+    # =========================================================================
+    quality-gate:
+        name: Quality Gate
+        runs-on: ubuntu-latest
+        timeout-minutes: 5
+        if: always()
+        needs:
+            - commitlint
+            - backend-ci
+            - frontend-ci
+            - security-scan
+            - dependency-audit
+        steps:
+            - name: Evaluate gate
+              run: |
+                  CL="${{ needs.commitlint.result }}"
+                  BE="${{ needs.backend-ci.result }}"
+                  FE="${{ needs.frontend-ci.result }}"
+
+                  echo "commitlint:  $CL"
+                  echo "backend-ci:  $BE"
+                  echo "frontend-ci: $FE"
+
+                  for r in "$BE" "$FE"; do
+                    [[ "$r" == "failure" ]] && { echo "❌ Required job failed"; exit 1; }
+                  done
+
+                  [[ "$CL" == "failure" ]] && { echo "❌ Commitlint failed"; exit 1; }
+
+                  echo "✅ All gates passed"
+
+            - name: Write step summary
+              if: always()
+              run: |
+                  icon() { case "$1" in success) echo "✅";; failure) echo "❌";; skipped) echo "⏭️";; cancelled) echo "🚫";; *) echo "🔶";; esac; }
+                  {
+                    echo "## CI Quality Gate"
+                    echo "| Job | Status |"
+                    echo "|-----|--------|"
+                    echo "| Commitlint       | $(icon ${{ needs.commitlint.result }}) \`${{ needs.commitlint.result }}\` |"
+                    echo "| Backend CI       | $(icon ${{ needs.backend-ci.result }}) \`${{ needs.backend-ci.result }}\` |"
+                    echo "| Frontend CI      | $(icon ${{ needs.frontend-ci.result }}) \`${{ needs.frontend-ci.result }}\` |"
+                    echo "| Security Scan    | $(icon ${{ needs.security-scan.result }}) \`${{ needs.security-scan.result }}\` |"
+                    echo "| Dependency Audit | $(icon ${{ needs.dependency-audit.result }}) \`${{ needs.dependency-audit.result }}\` |"
+                    echo ""
+                    echo "_\`${{ github.event_name }}\` on \`${{ github.ref_name }}\` — \`${{ github.sha }}\`_"
+                  } >> $GITHUB_STEP_SUMMARY

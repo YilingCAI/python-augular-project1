@@ -1,0 +1,138 @@
+<div class="signup-container">
+    <form (ngSubmit)="onSubmit()" class="signup-form" #signupForm="ngForm" [attr.novalidate]="true">
+        <div class="form-header">
+            <h2>Create Account</h2>
+            <p class="form-subtitle">Join and play tic tac toe</p>
+        </div>
+
+        <!-- Error Message Section -->
+        <div *ngIf="errors['submit']" class="error-message" role="alert" aria-live="polite">
+            <span class="error-icon">⚠</span>
+            <div class="error-content">
+                <strong>Registration Error</strong>
+                <p>{{ errors['submit'] }}</p>
+            </div>
+        </div>
+
+        <!-- Username Field -->
+        <div class="form-group">
+            <label for="username">
+                <span class="label-text">Username</span>
+                <span class="required-indicator" aria-label="required">*</span>
+            </label>
+            <input id="username" type="text" [(ngModel)]="username" (blur)="validateUsernameField()" name="username"
+                class="form-input" [disabled]="loading" required autocomplete="username"
+                [attr.aria-describedby]="errors['username'] ? 'error-username' : null"
+                [class.input-error]="errors['username']" maxlength="20" spellcheck="false" />
+            <span *ngIf="errors['username']" id="error-username" class="field-error">
+                {{ errors['username'] }}
+            </span>
+            <span class="field-hint">3-20 characters, letters, numbers, hyphen, underscore</span>
+        </div>
+
+        <!-- Password Field -->
+        <div class="form-group">
+            <label for="password">
+                <span class="label-text">Password</span>
+                <span class="required-indicator" aria-label="required">*</span>
+            </label>
+            <div class="password-input-wrapper">
+                <input id="password" [type]="showPassword ? 'text' : 'password'" [(ngModel)]="password"
+                    (blur)="validatePasswordField()" (input)="updatePasswordStrength()" name="password"
+                    class="form-input" [disabled]="loading" required autocomplete="new-password"
+                    [attr.aria-describedby]="errors['password'] ? 'error-password' : null"
+                    [class.input-error]="errors['password']" maxlength="255" />
+                <button type="button" class="password-toggle"
+                    [attr.aria-label]="showPassword ? 'Hide password' : 'Show password'"
+                    (click)="togglePasswordVisibility()" [disabled]="loading">
+                    {{ showPassword ? '🙈' : '👁' }}
+                </button>
+            </div>
+
+            <!-- Password Strength Indicator -->
+            <div *ngIf="password" class="password-strength">
+                <div class="strength-meter">
+                    <div class="strength-bar" [ngClass]="'strength-' + passwordStrength"
+                        [style.width.%]="getPasswordStrengthPercent()"></div>
+                </div>
+                <span class="strength-text" [ngClass]="'strength-' + passwordStrength">
+                    {{ passwordStrength === 'weak' ? 'Weak' : passwordStrength === 'fair' ? 'Fair' : 'Strong' }}
+                </span>
+            </div>
+
+            <!-- Password Requirements -->
+            <div class="password-requirements">
+                <p class="requirement-label">Password must contain:</p>
+                <ul class="requirement-list">
+                    <li [class.met]="hasMinLength">
+                        <span class="check-icon">{{ hasMinLength ? '✓' : '○' }}</span>
+                        At least 8 characters
+                    </li>
+                    <li [class.met]="hasUppercase">
+                        <span class="check-icon">{{ hasUppercase ? '✓' : '○' }}</span>
+                        One uppercase letter
+                    </li>
+                    <li [class.met]="hasLowercase">
+                        <span class="check-icon">{{ hasLowercase ? '✓' : '○' }}</span>
+                        One lowercase letter
+                    </li>
+                    <li [class.met]="hasNumber">
+                        <span class="check-icon">{{ hasNumber ? '✓' : '○' }}</span>
+                        One number
+                    </li>
+                    <li [class.met]="hasSpecialChar">
+                        <span class="check-icon">{{ hasSpecialChar ? '✓' : '○' }}</span>
+                        One special character
+                    </li>
+                </ul>
+            </div>
+
+            <span *ngIf="errors['password']" id="error-password" class="field-error">
+                {{ errors['password'] }}
+            </span>
+        </div>
+
+        <!-- Confirm Password Field -->
+        <div class="form-group">
+            <label for="confirmPassword">
+                <span class="label-text">Confirm Password</span>
+                <span class="required-indicator" aria-label="required">*</span>
+            </label>
+            <input id="confirmPassword" [type]="showConfirmPassword ? 'text' : 'password'" [(ngModel)]="confirmPassword"
+                (blur)="validateConfirmPasswordField()" name="confirmPassword" class="form-input" [disabled]="loading"
+                required autocomplete="new-password"
+                [attr.aria-describedby]="errors['confirmPassword'] ? 'error-confirm' : null"
+                [class.input-error]="errors['confirmPassword']" maxlength="255" />
+            <button type="button" class="password-toggle"
+                [attr.aria-label]="showConfirmPassword ? 'Hide password' : 'Show password'"
+                (click)="toggleConfirmPasswordVisibility()" [disabled]="loading" style="display: none">
+            </button>
+
+            <span *ngIf="errors['confirmPassword']" id="error-confirm" class="field-error">
+                {{ errors['confirmPassword'] }}
+            </span>
+        </div>
+
+        <!-- Form Actions -->
+        <div class="button-group">
+            <button type="submit" class="btn btn-signup" [disabled]="loading || !signupForm.valid"
+                [attr.aria-busy]="loading">
+                <span *ngIf="!loading">Sign Up</span>
+                <span *ngIf="loading" class="spinner"></span>
+                <span *ngIf="loading">Creating Account...</span>
+            </button>
+            <button type="button" class="btn btn-login" (click)="goToLogin()" [disabled]="loading">
+                Back to Login
+            </button>
+        </div>
+
+        <!-- Security & Privacy -->
+        <div class="security-info">
+            <p class="text-small text-muted">
+                🔒 Your data is encrypted and secure.
+                By signing up, you agree to our
+                <a href="/terms" target="_blank" rel="noopener noreferrer">Terms of Service</a>
+            </p>
+        </div>
+    </form>
+</div>

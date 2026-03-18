@@ -1,0 +1,164 @@
+###############################################################################
+# composite action: docker-build
+#
+# Builds a Docker image, optionally pushes it to a registry, and runs a
+# Trivy vulnerability scan on the resulting image.
+#
+# Callers:  staging.yml (build job),  release.yml (build-production job)
+# Inputs:   context, dockerfile, image-name, registry, tags, build-args,
+#           scan, scan-severity, scan-exit-code, cache-scope,
+#           registry-username, registry-password
+###############################################################################
+name: "Docker Build"
+description: "Build and push Docker image to registry"
+
+inputs:
+  context:
+    description: "Build context path"
+    required: true
+  dockerfile:
+    description: "Dockerfile path"
+    required: true
+  image-name:
+    description: "Image name (without registry)"
+    required: true
+  registry:
+    description: "Container registry"
+    required: false
+    default: "ghcr.io"
+  registry-username:
+    description: "Registry username"
+    required: false
+    default: ""
+  registry-password:
+    description: "Registry password/token"
+    required: false
+    default: ""
+  push:
+    description: "Push to registry after build"
+    required: false
+    default: "true"
+  scan:
+    description: "Run Trivy vulnerability scan"
+    required: false
+    default: "true"
+  scan-severity:
+    description: "Trivy severities to include"
+    required: false
+    default: "CRITICAL,HIGH"
+  scan-exit-code:
+    description: "Trivy exit code on findings"
+    required: false
+    default: "0"
+  tags:
+    description: "docker/metadata-action tag rules"
+    required: false
+    default: ""
+  build-args:
+    description: "Additional Docker build args"
+    required: false
+    default: ""
+  cache-scope:
+    description: "GHA cache scope"
+    required: false
+    default: ""
+  platforms:
+    description: "Target platforms for image build"
+    required: false
+    default: "linux/amd64"
+  cache:
+    description: "Use GitHub Actions cache"
+    required: false
+    default: "true"
+  cache-key-files:
+    description: "Glob pattern for files to include in cache key (e.g., poetry.lock, package-lock.json, *.tf)"
+    required: false
+    default: ""
+
+outputs:
+  image-uri:
+    description: "Full image URI"
+    value: ${{ steps.meta.outputs.tags }}
+  image-digest:
+    description: "Image digest"
+    value: ${{ steps.build.outputs.digest }}
+  vulnerabilities-found:
+    description: "Whether vulnerabilities were found"
+    value: ${{ steps.trivy.outputs.vulnerabilities-found }}
+
+runs:
+  using: "composite"
+  steps:
+    - name: Set up Docker Buildx
+      uses: docker/setup-buildx-action@v2
+
+    - name: Login to registry
+      if: inputs.registry-username != '' && inputs.registry-password != ''
+      uses: docker/login-action@v2
+      with:
+        registry: ${{ inputs.registry }}
+        username: ${{ inputs.registry-username }}
+        password: ${{ inputs.registry-password }}
+
+    - name: Generate dynamic cache key
+      id: cache-key
+      shell: bash
+      run: |
+        if [[ -n "${{ inputs.cache-key-files }}" ]]; then
+          CACHE_KEY="docker-${{ inputs.image-name }}-${{ hashFiles(inputs.cache-key-files) }}"
+        else
+          CACHE_KEY="docker-${{ inputs.image-name }}-${{ github.sha }}"
+        fi
+        echo "key=${CACHE_KEY}" >> $GITHUB_OUTPUT
+
+    - name: Extract metadata
+      id: meta
+      uses: docker/metadata-action@v4
+      with:
+        images: ${{ inputs.registry }}/${{ inputs.image-name }}
+        tags: ${{ inputs.tags != '' && inputs.tags || 'type=ref,event=branch\ntype=sha,prefix={{branch}}-\ntype=semver,pattern={{version}}\ntype=raw,value=latest,enable={{is_default_branch}}' }}
+
+    - name: Build and push Docker image
+      id: build
+      uses: docker/build-push-action@v4
+      with:
+        context: ${{ inputs.context }}
+        file: ${{ inputs.dockerfile }}
+        platforms: ${{ inputs.platforms }}
+        push: ${{ inputs.push }}
+        tags: ${{ steps.meta.outputs.tags }}
+        labels: ${{ steps.meta.outputs.labels }}
+        cache-from: ${{ inputs.cache == 'true' && format('type=gha,scope={0}', inputs.cache-scope != '' && inputs.cache-scope || inputs.image-name) || '' }}
+        cache-to: ${{ inputs.cache == 'true' && format('type=gha,mode=max,scope={0}', inputs.cache-scope != '' && inputs.cache-scope || inputs.image-name) || '' }}
+        build-args: |
+          BUILD_DATE=$(date -u +'%Y-%m-%dT%H:%M:%SZ')
+          VCS_REF=${{ github.sha }}
+          VERSION=${{ github.ref_name }}
+          ${{ inputs.build-args }}
+
+    - name: Run Trivy vulnerability scan
+      id: trivy
+      if: inputs.scan == 'true'
+      uses: aquasecurity/trivy-action@master
+      with:
+        image-ref: ${{ steps.meta.outputs.tags }}
+        format: "sarif"
+        output: "trivy-results.sarif"
+        severity: ${{ inputs.scan-severity }}
+        exit-code: ${{ inputs.scan-exit-code }}
+      continue-on-error: true
+
+    - name: Upload Trivy results
+      if: inputs.scan == 'true'
+      uses: github/codeql-action/upload-sarif@v2
+      with:
+        sarif_file: "trivy-results.sarif"
+        category: "trivy-docker-${{ inputs.image-name }}"
+      continue-on-error: true
+
+    - name: Report build completion
+      shell: bash
+      run: |
+        echo "✓ Docker image built and pushed"
+        echo "  Image: ${{ steps.meta.outputs.tags }}"
+        echo "  Digest: ${{ steps.build.outputs.digest }}"

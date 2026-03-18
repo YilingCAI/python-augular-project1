@@ -1,0 +1,83 @@
+<div class="create-game-container">
+    <header class="game-header">
+        <div class="header-content">
+            <h1>Create New Game</h1>
+            <p class="header-subtitle">Invite someone to play with you</p>
+        </div>
+        <button type="button" (click)="goBack()" class="btn btn-back" aria-label="Go back to homepage">
+            ← Back
+        </button>
+    </header>
+
+    <!-- Error Message -->
+    <div *ngIf="error" class="error-message" role="alert" aria-live="polite">
+        <span class="error-icon">⚠</span>
+        <div class="error-content">
+            <strong>Error</strong>
+            <p>{{ error }}</p>
+        </div>
+    </div>
+
+    <!-- Create Section -->
+    <div *ngIf="!gameId" class="create-section">
+        <div class="create-card">
+            <div class="card-icon">🎮</div>
+            <h2>Ready to Play?</h2>
+            <p>Click below to create a new game and get a shareable ID for your opponent.</p>
+
+            <button type="button" (click)="handleCreateGame()" [disabled]="loading" class="btn btn-primary btn-large"
+                [attr.aria-busy]="loading">
+                <span *ngIf="!loading">✨ Create New Game</span>
+                <span *ngIf="loading" class="spinner"></span>
+                <span *ngIf="loading">Creating...</span>
+            </button>
+        </div>
+    </div>
+
+    <!-- Game Section -->
+    <div *ngIf="gameId" class="game-section">
+        <div class="game-info-card">
+            <h2>Game Created! 🎉</h2>
+
+            <!-- Game ID Display -->
+            <div class="game-id-section">
+                <p>Your Game ID:</p>
+                <div class="game-id-display">
+                    <code class="game-id-code">{{ gameId }}</code>
+                    <button type="button" class="btn btn-copy" (click)="copyGameId()"
+                        [attr.aria-label]="'Copy game ID ' + gameId">
+                        📋 Copy
+                    </button>
+                </div>
+                <p class="copy-message" *ngIf="showCopyMessage" [@fadeInOut]>
+                    ✓ Copied to clipboard!
+                </p>
+            </div>
+
+            <!-- Instructions -->
+            <div class="instructions">
+                <h3>Next Steps:</h3>
+                <ol>
+                    <li>Share the Game ID with your opponent</li>
+                    <li>They can join using the ID on the Join Game page</li>
+                    <li>Once they join, the game board will become active</li>
+                    <li>Start playing and have fun!</li>
+                </ol>
+            </div>
+
+            <!-- Game Board -->
+            <div class="game-board-container">
+                <h3>Game Board</h3>
+                <p class="board-status">{{ boardStatus }}</p>
+                <app-game-board [board]="board" (cellClick)="handleCellClick($event)"
+                    [disabled]="loading || !opponent"></app-game-board>
+            </div>
+
+            <!-- Waiting Message -->
+            <div *ngIf="!opponent" class="waiting-message">
+                <div class="spinner-animation"></div>
+                <p>Waiting for opponent to join...</p>
+            </div>
+        </div>
+    </div>
+</div>

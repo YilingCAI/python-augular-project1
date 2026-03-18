@@ -1,0 +1,153 @@
+services:
+  # ========================================================================
+  # PostgreSQL Database
+  # ========================================================================
+  postgres:
+    image: postgres:16-alpine
+    container_name: ${PROJECT_NAME}_postgres
+    restart: unless-stopped
+    ports:
+      - "${POSTGRES_PORT}:${POSTGRES_CONTAINER_PORT}"
+    environment:
+      POSTGRES_USER: ${DATABASE_USER}
+      POSTGRES_PASSWORD: ${DATABASE_PASSWORD}
+      POSTGRES_DB: ${DATABASE_NAME}
+      POSTGRES_INITDB_ARGS: ${POSTGRES_INITDB_ARGS}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./init-db.sql:/docker-entrypoint-initdb.d/init.sql:ro
+      - ./init-test-db.sql:/docker-entrypoint-initdb.d/test-init.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $$POSTGRES_USER -d $$POSTGRES_DB"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - myproject-network
+    labels:
+      - "com.docker.compose.service=database"
+
+  # ========================================================================
+  # FastAPI Backend
+  # ========================================================================
+  backend:
+    build:
+      context: ../backend
+      dockerfile: Dockerfile
+      args:
+        - PYTHON_VERSION=${PYTHON_VERSION}
+    container_name: ${PROJECT_NAME}_backend
+    restart: unless-stopped
+    ports:
+      - "${BACKEND_PORT}:${BACKEND_PORT}"
+    environment:
+      # Application
+      ENVIRONMENT: ${ENVIRONMENT}
+      DEBUG: ${DEBUG}
+      LOG_LEVEL: ${LOG_LEVEL}
+      
+      # Backend Server
+      BACKEND_HOST: ${BACKEND_HOST}
+      BACKEND_PORT: ${BACKEND_PORT}
+      BACKEND_RELOAD: ${BACKEND_RELOAD}
+      BACKEND_WORKERS: ${BACKEND_WORKERS}
+      
+      # API
+      API_TITLE: ${API_TITLE}
+      API_DESCRIPTION: ${API_DESCRIPTION}
+      API_VERSION: ${API_VERSION}
+      
+      # Database
+      DATABASE_USER: ${DATABASE_USER}
+      DATABASE_PASSWORD: ${DATABASE_PASSWORD}
+      DATABASE_HOST: ${DATABASE_HOST}
+      DATABASE_PORT: ${DATABASE_PORT}
+      DATABASE_NAME: ${DATABASE_NAME}
+      DATABASE_POOL_SIZE: ${DATABASE_POOL_SIZE}
+      DATABASE_ECHO: ${DATABASE_ECHO}
+      
+      # Security
+      JWT_SECRET_KEY: ${JWT_SECRET_KEY}
+      JWT_ALGORITHM: ${JWT_ALGORITHM}
+      JWT_EXPIRE_MINUTES: ${JWT_EXPIRE_MINUTES}
+      ENABLE_HSTS: ${ENABLE_HSTS}
+      
+      # CORS
+      ALLOWED_ORIGINS: ${ALLOWED_ORIGINS}
+      CORS_ALLOW_CREDENTIALS: ${CORS_ALLOW_CREDENTIALS}
+      CORS_ALLOW_METHODS: ${CORS_ALLOW_METHODS}
+      CORS_ALLOW_HEADERS: ${CORS_ALLOW_HEADERS}
+      
+      # Frontend
+      FRONTEND_URL: ${FRONTEND_URL}
+      API_BASE_URL: ${API_BASE_URL}
+      
+      # Logging
+      LOG_FORMAT: ${LOG_FORMAT}
+      LOG_OUTPUT: ${LOG_OUTPUT}
+    depends_on:
+      postgres:
+        condition: service_healthy
+    volumes:
+      - ../backend:/app
+      - /app/__pycache__
+      # Mount project-wide config so /config/.env.* files are available at runtime
+      - ../config:/config:ro
+    networks:
+      - myproject-network
+    labels:
+      - "com.docker.compose.service=backend"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+  # ========================================================================
+  # Angular Frontend
+  # ========================================================================
+  frontend:
+    build:
+      context: ../frontend
+      dockerfile: Dockerfile
+      args:
+        - NODE_VERSION=20
+    container_name: ${PROJECT_NAME}_frontend
+    restart: unless-stopped
+    ports:
+      - "${FRONTEND_PORT}:${FRONTEND_PORT}"
+    environment:
+      # Angular
+      NG_HOST: ${NG_HOST}
+      NG_PORT: ${NG_PORT}
+      
+      # API Configuration
+      API_BASE_URL: ${API_BASE_URL}
+      FRONTEND_URL: ${FRONTEND_URL}
+    depends_on:
+      - backend
+    volumes:
+      - ../frontend:/app
+      - /app/node_modules
+    networks:
+      - myproject-network
+    labels:
+      - "com.docker.compose.service=frontend"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:4200"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+volumes:
+  postgres_data:
+    driver: local
+    labels:
+      - "com.docker.compose.volume=database"
+
+networks:
+  myproject-network:
+    driver: bridge
+    name: ${PROJECT_NAME}-network

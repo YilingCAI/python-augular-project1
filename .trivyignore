@@ -1,0 +1,13 @@
+# Trivyignore file for managing false positives in vulnerability scanning
+# Format: CVE ID or vulnerability identifier followed by reason and expiration
+
+# Example entries (uncomment and modify as needed):
+# CVE-2023-12345
+#   exp: 2025-12-31
+#   reason: "This vulnerability is not applicable to our usage"
+
+# To generate and manage these:
+# 1. Run: trivy fs . --severity HIGH,CRITICAL
+# 2. Review false positives
+# 3. Add to this file with justification
+# 4. Set expiration dates for review

@@ -1,48 +1,79 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# Frontend
 
+Angular frontend application (TypeScript + Tailwind) served by Nginx in containerized environments.
 
-```bash install nvm
-curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.39.5/install.sh | bash
-export NVM_DIR="$HOME/.nvm"
-[ -s "$NVM_DIR/nvm.sh" ] && \. "$NVM_DIR/nvm.sh"
-nvm --version
-```
-```bash install node.js LTS with nvm
-nvm install --lts
-nvm use --lts
-node -v   # Node.js version, e.g., v20.x.x
-npm -v    # npm version, e.g., 10.x.x
-```
+## Local setup
 
-
-```bash Create a React app named 'frontend'
-npx create-react-app frontend
+```bash
 cd frontend
-
-# Start development server
-npm run dev
-npm run build
-npm run start
+npm ci
+npm start
 ```
 
+Or from project root:
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+```bash
+make frontend
+```
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+Local URL: http://localhost:4200
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+## Full-stack local run
 
-## Learn More
+```bash
+make dev
+```
 
-To learn more about Next.js, take a look at the following resources:
+Expected local dependencies:
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+- Backend API at http://localhost:8000
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+## Testing and quality
 
-## Deploy on Vercel
+```bash
+npm run lint
+npm run type-check
+npm run test:ci
+```
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+Coverage:
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+```bash
+npm run test:ci -- --code-coverage
+```
+
+## Build
+
+```bash
+npm run build
+```
+
+Build output is served by Nginx in Docker/ECS runtime.
+
+## Environment files
+
+- `src/environments/environment.ts` (local)
+- `src/environments/environment.production.ts` (production build)
+
+These files only contain non-secret public config (for example API base URLs).
+
+## Structure
+
+```text
+frontend/
+├── src/
+│   ├── app/
+│   │   ├── components/
+│   │   ├── services/
+│   │   ├── core/
+│   │   └── types/
+│   └── environments/
+├── angular.json
+├── package.json
+└── Dockerfile
+```
+
+## CI/CD notes
+
+- `ci.yml`: lint, type-check, build
+- `staging.yml` and `release.yml`: build frontend image and push to ECR

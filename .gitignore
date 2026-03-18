@@ -1,21 +1,188 @@
-# VS Code
+# ==============================================================================
+# Project-wide .gitignore
+# ==============================================================================
+# Includes patterns for Python, Node.js, IDE, OS, and environment files
+# ==============================================================================
+
+# ============================================================================
+# ENVIRONMENT & SECRETS (CRITICAL - Never commit)
+# ==============================================================================
+# Never commit actual .env files - they contain secrets and sensitive data
+# .example files ARE tracked (serve as templates)
+# config/ folder contains centralized environment configuration
+
+# Root level (legacy - kept for backward compatibility)
+.env
+.env.local
+.env.docker
+.env.staging
+.env.prod
+.env.*.local
+
+# config/ folder - centralized environment configuration
+# NOTE: .env.*.example files ARE tracked (they are templates)
+config/.env
+config/.env.*
+!config/.env.*.example
+!config/.env.*.md
+
+# Environment files at any level
+*.pem
+*.key
+*.cert
+*.p12
+.aws/
+secrets/
+.secrets/
+
+# ============================================================================
+# IDE & EDITOR FILES
+# ============================================================================
 .vscode/
-*.code-workspace
-
-# ------------------------
-# macOS
-# ------------------------
-.DS_Store
-.AppleDouble
-.LSOverride
-Thumbs.db
-
-# ------------------------
-# General
-# ------------------------
+!.vscode/settings.json
+!.vscode/tasks.json
+!.vscode/launch.json
+!.vscode/extensions.json
+.idea/
 *.swp
 *.swo
+*.swn
+*~
+.DS_Store
+Thumbs.db
+*.sublime-project
+*.sublime-workspace
+.project
+.pydevproject
+.settings/
+*.launch
+
+# ============================================================================
+# macOS
+# ============================================================================
+.AppleDouble
+.LSOverride
+._*
+
+# ============================================================================
+# BUILD & DIST
+# ============================================================================
+build/
+dist/
+*.egg-info/
+.eggs/
+*.egg
+MANIFEST
+*.pyc
+*.pyo
+*.pyd
+
+# ============================================================================
+# PYTHON
+# ============================================================================
+__pycache__/
+*.py[cod]
+*$py.class
+.Python
+env/
+venv/
+ENV/
+.venv
+pip-log.txt
+pip-delete-this-directory.txt
+.tox/
+.coverage
+.coverage.*
+.cache
+nosetests.xml
+coverage.xml
+*.cover
+.hypothesis/
+.pytest_cache/
+.mypy_cache/
+.mypy_cache/*
+htmlcov/
+.ruff_cache/
+
+# ============================================================================
+# DATABASE
+# ============================================================================
+*.db
+*.sqlite
+*.sqlite3
+test.db
+database.sqlite3
+pg_data/
+postgres_data/
+
+# ============================================================================
+# NODE.JS & FRONTEND
+# ============================================================================
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+dist/
+out-tsc/
+.angular/
+coverage/
+*.tsbuildinfo
+.cache/
+.parcel-cache/
+.next/
+
+# ============================================================================
+# LOGS
+# ============================================================================
+*.log
+logs/
+*.log.*
+
+# ============================================================================
+# DOCKER & COMPOSE
+# ============================================================================
+.dockerignore
+docker-compose.override.yml
+
+# ============================================================================
+# TERRAFORM
+# ============================================================================
+*.tfstate
+*.tfstate.*
+.terraform/
+.terraform.lock.hcl
+terraform.tfvars
+.tfvars
+
+# ============================================================================
+# GITHUB ACTIONS
+# ============================================================================
+# Config files should be managed by Terraform and GitHub Secrets, not hardcoded
+.github/workflows/config.json
+.github/workflows/*.local
+.github/workflows/secrets/
+
+# ============================================================================
+# TEMPORARY & ARTIFACTS
+# ============================================================================
+*.tmp
+*.temp
 *.bak
 *.backup
-*.tmp
-*.log
+archive/
+tmp/
+temp/
+*.zip
+*.tar.gz
+*.rar
+
+# ============================================================================
+# MISC
+# ============================================================================
+.git/
+.gitkeep
+.env.test
+poetry.lock.local
+package-lock.json.local
+
+mypythonproject1.code-workspace
