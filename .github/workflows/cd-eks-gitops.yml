@@ -20,7 +20,7 @@
 # This workflow does NOT run Terraform — infrastructure is managed by a
 # dedicated pipeline in mypythonproject1-infra2.
 #
-# Secrets (GitHub Environments "staging" and "production"):
+# Secrets (GitHub Environments "dev", "staging", and "production"):
 #   AWS_ROLE_TO_ASSUME   — OIDC role ARN with ECR push permission
 #   AWS_REGION           — e.g. us-east-1
 #   GITOPS_DEPLOY_TOKEN  — PAT (contents:write) on mypythonproject1-gitops
@@ -46,7 +46,7 @@ on:
         description: "Target environment"
         required: true
         type: choice
-        options: [staging, production]
+        options: [dev, staging, production]
         default: staging
 
 permissions:
@@ -75,8 +75,8 @@ jobs:
       (github.event_name == 'workflow_run'
         && github.event.workflow_run.conclusion == 'success')
       || (github.event_name == 'workflow_dispatch'
-        && inputs.environment == 'staging')
-    environment: staging
+        && inputs.environment == 'dev')
+    environment: dev
     strategy:
       matrix:
         service: [backend, frontend]
@@ -133,7 +133,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     needs: [build-dev]
-    environment: staging
+    environment: dev
     permissions:
       contents: read
     steps:
@@ -166,6 +166,64 @@ jobs:
           git diff --cached --quiet && echo "No changes to commit" && exit 0
           git commit -m "chore(deploy): dev image tag ${{ steps.tag.outputs.new-tag }} [skip ci]"
           git push origin main
+
+  # ---------------------------------------------------------------------------
+  # 0c. Wait for ArgoCD to sync dev and report health
+  # ---------------------------------------------------------------------------
+  argocd-sync-dev:
+    name: "ArgoCD Sync [dev]"
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    needs: [update-gitops-dev]
+    environment: dev
+    steps:
+      - name: Poll ArgoCD application health
+        env:
+          ARGOCD_SERVER: ${{ secrets.ARGOCD_SERVER }}
+          ARGOCD_TOKEN:  ${{ secrets.ARGOCD_TOKEN }}
+        run: |
+          APP="mypythonproject1-dev"
+          MAX=30        # 30 × 30s = 15 min
+          SLEEP=30
+
+          for i in $(seq 1 $MAX); do
+            RESP=$(curl -sf \
+              -H "Authorization: Bearer $ARGOCD_TOKEN" \
+              "https://${ARGOCD_SERVER}/api/v1/applications/${APP}" || true)
+
+            HEALTH=$(echo "$RESP" | jq -r '.status.health.status // "Unknown"')
+            SYNC=$(echo   "$RESP" | jq -r '.status.sync.status   // "Unknown"')
+            echo "[$i/$MAX] health=$HEALTH  sync=$SYNC"
+
+            if [[ "$HEALTH" == "Healthy" && "$SYNC" == "Synced" ]]; then
+              echo "✅ ArgoCD: $APP is Healthy and Synced"
+              exit 0
+            fi
+
+            if [[ "$HEALTH" == "Degraded" ]]; then
+              echo "❌ ArgoCD: $APP health is Degraded — failing fast"
+              exit 1
+            fi
+
+            sleep $SLEEP
+          done
+
+          echo "❌ Timeout: $APP did not become Healthy+Synced within $((MAX * SLEEP / 60)) min"
+          exit 1
+
+  # ---------------------------------------------------------------------------
+  # 0d. Smoke test (dev)
+  # ---------------------------------------------------------------------------
+  smoke-test-dev:
+    name: "Smoke Test [dev]"
+    needs: [argocd-sync-dev]
+    uses: ./.github/workflows/_smoke-test.yml
+    with:
+      environment: dev
+      app-url: ${{ vars.APP_URL }}
+      warmup-seconds: 15
+      deploy-sha: ${{ github.event.workflow_run.head_sha || github.sha }}
+    secrets: inherit
 
 ###############################################################################
 # ─── STAGING ────────────────────────────────────────────────────────────────
