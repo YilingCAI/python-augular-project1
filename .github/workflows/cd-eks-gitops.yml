@@ -152,7 +152,7 @@ jobs:
       - name: Patch dev values — backend + frontend
         run: |
           FILE="gitops/environments/dev/values.yaml"
-          docker run --rm -v "$PWD/gitops:/gitops" mikefarah/yq:4 \
+          docker run --rm --user root -v "$PWD/gitops:/gitops" mikefarah/yq:4 \
             e '.backend.image.tag = "${{ steps.tag.outputs.new-tag }}" | .frontend.image.tag = "${{ steps.tag.outputs.new-tag }}"' \
             -i /gitops/environments/dev/values.yaml
 
@@ -329,7 +329,7 @@ jobs:
         run: |
           FILE="gitops/environments/staging/values.yaml"
           # Use yq to update only the image.tag fields — avoids sed fragility
-          docker run --rm -v "$PWD/gitops:/gitops" \
+          docker run --rm --user root -v "$PWD/gitops:/gitops" \
             mikefarah/yq:4 \
             e '.backend.image.tag = "${{ steps.tag.outputs.new-tag }}"' \
             -i /gitops/environments/staging/values.yaml
@@ -337,7 +337,7 @@ jobs:
 
       - name: Patch staging values — frontend
         run: |
-          docker run --rm -v "$PWD/gitops:/gitops" \
+          docker run --rm --user root -v "$PWD/gitops:/gitops" \
             mikefarah/yq:4 \
             e '.frontend.image.tag = "${{ steps.tag.outputs.new-tag }}"' \
             -i /gitops/environments/staging/values.yaml
@@ -539,14 +539,14 @@ jobs:
 
       - name: Patch production values — backend
         run: |
-          docker run --rm -v "$PWD/gitops:/gitops" \
+          docker run --rm --user root -v "$PWD/gitops:/gitops" \
             mikefarah/yq:4 \
             e '.backend.image.tag = "${{ steps.ver.outputs.tag }}"' \
             -i /gitops/environments/production/values.yaml
 
       - name: Patch production values — frontend
         run: |
-          docker run --rm -v "$PWD/gitops:/gitops" \
+          docker run --rm --user root -v "$PWD/gitops:/gitops" \
             mikefarah/yq:4 \
             e '.frontend.image.tag = "${{ steps.ver.outputs.tag }}"' \
             -i /gitops/environments/production/values.yaml
