@@ -22,7 +22,6 @@
 # config/ folder - centralized environment configuration
 # NOTE: .env.*.example files ARE tracked (they are templates)
 config/.env
-config/.env.*
 !config/.env.*.example
 !config/.env.*.md
 
