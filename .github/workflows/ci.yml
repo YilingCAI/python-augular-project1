@@ -120,18 +120,13 @@ jobs:
         # Values must be set as GitHub Actions Repository Variables (Settings →
         # Secrets and variables → Variables) to match config/.env.test.
         # Reference: config/.env.test — DATABASE_USER / DATABASE_PASSWORD / DATABASE_NAME / DATABASE_PORT
-        env:
-            POSTGRES_USER:     ${{ secrets.DATABASE_USER }}
-            POSTGRES_PASSWORD: ${{ secrets.DATABASE_PASSWORD }}
-            POSTGRES_DB:       ${{ secrets.DATABASE_NAME }}
-            POSTGRES_PORT:     ${{ vars.POSTGRES_PORT }}
         services:
             postgres:
                 image: postgres:16-alpine
                 env:
-                    POSTGRES_USER:     ${{ env.POSTGRES_USER }}
-                    POSTGRES_PASSWORD: ${{ env.POSTGRES_PASSWORD }}
-                    POSTGRES_DB:       ${{ env.POSTGRES_DB }}
+                    POSTGRES_USER:     ${{ secrets.DATABASE_USER }}
+                    POSTGRES_PASSWORD: ${{ secrets.DATABASE_PASSWORD }}
+                    POSTGRES_DB:       ${{ secrets.DATABASE_NAME }}
                 options: >-
                     --health-cmd pg_isready
                     --health-interval 10s
