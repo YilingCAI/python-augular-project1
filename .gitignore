@@ -181,7 +181,6 @@ temp/
 # ============================================================================
 .git/
 .gitkeep
-.env.test
 poetry.lock.local
 package-lock.json.local
 
