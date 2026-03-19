@@ -28,7 +28,7 @@
 #   GITOPS_DEPLOY_TOKEN  — PAT (contents:write) on mypythonproject1-gitops
 #   ARGOCD_SERVER        — ArgoCD server hostname only, no scheme
 #   ARGOCD_TOKEN         — ArgoCD API token for health poll
-#   DATABASE_PORT / DB_PORT / DB_NAME / DB_USERNAME / DB_PASSWORD
+#   DATABASE_PORT / DATABASE_PORT / DATABASE_NAME / DATABASE_USERNAME / DATABASE_PASSWORD
 #
 # Variables (GitHub Environments):
 #   APP_URL              — Base URL for smoke test health check
@@ -76,6 +76,7 @@ jobs:
       (github.event_name == 'workflow_run'
         && github.event.workflow_run.conclusion == 'success') || (github.event_name == 'workflow_dispatch'
         && inputs.environment == 'dev')
+    environment: dev
     permissions:
       contents: read
       id-token: write
@@ -145,6 +146,7 @@ jobs:
       (github.event_name == 'workflow_run'
         && github.event.workflow_run.conclusion == 'success')|| (github.event_name == 'workflow_dispatch'
         && inputs.environment == 'staging')
+    environment: staging
     permissions:
       contents: read
       id-token: write
@@ -249,6 +251,7 @@ jobs:
   build-production:
     name: "Build & Push [production]"
     if: startsWith(github.ref, 'refs/tags/v')
+    environment: prod
     permissions:
       contents: read
       id-token: write
