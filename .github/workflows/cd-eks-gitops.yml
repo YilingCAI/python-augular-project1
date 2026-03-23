@@ -111,6 +111,7 @@ jobs:
       - uses: ./.github/actions/deploy-env
         with:
           gitops-env: default
+          target-environment: dev
           image-tag: ${{ format('dev-{0}', needs.build-dev.outputs.sha-short) }}
           gitops-repo: ${{ github.repository_owner }}/python-angular-project1-gitops
           eks-cluster-name: mypythonproject1-dev-eks
@@ -179,7 +180,8 @@ jobs:
 
       - uses: ./.github/actions/deploy-env
         with:
-          gitops-env: ${ inputs.environment }
+          gitops-env: default
+          target-environment: staging
           image-tag: ${{ format('staging-{0}', needs.build-staging.outputs.sha-short) }}
           gitops-repo: ${{ github.repository_owner }}/gitgitops
           eks-cluster-name: mypythonproject1-staging-eks
@@ -286,7 +288,8 @@ jobs:
 
       - uses: ./.github/actions/deploy-env
         with:
-          gitops-env: ${{ inputs.environment }}
+          gitops-env: default
+          target-environment: prod
           image-tag: ${{ github.ref_name }}
           gitops-repo: ${{ github.repository_owner }}/python-angular-project1-gitops
           eks-cluster-name: mypythonproject1-prod-eks
