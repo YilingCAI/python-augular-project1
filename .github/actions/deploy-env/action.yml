@@ -26,6 +26,9 @@ inputs:
   gitops-repo:
     description: "Owner/name of the GitOps repository"
     required: true
+  target-environment:
+    description: "EKs env"
+    required: true
 
   # ── K8s / AWS ─────────────────────────────────────────────────────────────
   eks-cluster-name:
@@ -114,7 +117,7 @@ runs:
       run: |
         docker run --rm --user root -v "$PWD/_gitops:/gitops" mikefarah/yq:4 \
           e '.backend.image.tag = "${{ inputs.image-tag }}" | .frontend.image.tag = "${{ inputs.image-tag }}"' \
-          -i /gitops/environments/${{ inputs.gitops-env }}/values.yaml
+          -i /gitops/environments/${{ inputs.target-environment }}/values.yaml
 
     - name: "Commit & push GitOps change"
       shell: bash
