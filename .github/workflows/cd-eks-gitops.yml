@@ -112,7 +112,7 @@ jobs:
         with:
           gitops-env: default
           image-tag: ${{ format('dev-{0}', needs.build-dev.outputs.sha-short) }}
-          gitops-repo: ${{ github.repository_owner }}/mypythonproject1-gitops
+          gitops-repo: ${{ github.repository_owner }}/python-angular-project1-gitops
           eks-cluster-name: mypythonproject1-dev-eks
           namespace: mypythonproject1-dev
           aws-role-arn: ${{ secrets.AWS_ROLE_TO_ASSUME }}
@@ -181,7 +181,7 @@ jobs:
         with:
           gitops-env: ${ inputs.environment }
           image-tag: ${{ format('staging-{0}', needs.build-staging.outputs.sha-short) }}
-          gitops-repo: ${{ github.repository_owner }}/mypythonproject1-gitops
+          gitops-repo: ${{ github.repository_owner }}/gitgitops
           eks-cluster-name: mypythonproject1-staging-eks
           namespace: mypythonproject1-staging
           aws-role-arn: ${{ secrets.AWS_ROLE_TO_ASSUME }}
@@ -288,7 +288,7 @@ jobs:
         with:
           gitops-env: ${{ inputs.environment }}
           image-tag: ${{ github.ref_name }}
-          gitops-repo: ${{ github.repository_owner }}/mypythonproject1-gitops
+          gitops-repo: ${{ github.repository_owner }}/python-angular-project1-gitops
           eks-cluster-name: mypythonproject1-prod-eks
           namespace: mypythonproject1-production
           aws-role-arn: ${{ secrets.AWS_ROLE_TO_ASSUME }}
