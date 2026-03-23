@@ -125,7 +125,7 @@ runs:
         cd _gitops
         git config user.name  "github-actions[bot]"
         git config user.email "github-actions[bot]@users.noreply.github.com"
-        git add environments/${{ inputs.gitops-env }}/values.yaml
+        git add environments/${{ inputs.target-environment }}/values.yaml
         git diff --cached --quiet && echo "No changes to commit" && exit 0
         git commit -m "chore(deploy): ${{ inputs.gitops-env }} image tag ${{ inputs.image-tag }} [skip ci]"
         git push origin main
