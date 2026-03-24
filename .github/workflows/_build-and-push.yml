@@ -45,11 +45,6 @@ on:
       sha-short:
         description: "7-char commit SHA used for image tagging"
         value: ${{ jobs.build.outputs.sha-short }}
-    secrets:
-      AWS_ROLE_TO_ASSUME:
-        required: true
-      AWS_REGION:
-        required: true
 
 jobs:
   build:
