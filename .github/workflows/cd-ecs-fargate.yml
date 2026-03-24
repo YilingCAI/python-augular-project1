@@ -39,7 +39,7 @@ on:
         description: "Target environment"
         required: true
         type: choice
-        options: [staging, prod]
+        options: [dev, staging, prod]
         default: staging
 
 permissions:
@@ -62,6 +62,136 @@ concurrency:
   # 1a. Build + push staging images
   # ---------------------------------------------------------------------------
 jobs:
+  build-dev:
+    name: "Build & Push [dev] (${{ matrix.service }})"
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    if: >
+      github.event_name == 'workflow_dispatch'
+      && inputs.environment == 'dev'
+    environment: dev
+    strategy:
+      matrix:
+        service: [backend, frontend]
+      fail-fast: true
+    permissions:
+      contents: read
+      id-token: write
+    outputs:
+      registry: ${{ steps.ecr-login.outputs.registry }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+
+      - name: Authenticate with AWS
+        uses: ./.github/actions/aws-auth
+        with:
+          role-arn: ${{ secrets.AWS_ROLE_TO_ASSUME }}
+          aws-region: ${{ secrets.AWS_REGION }}
+
+      - name: Log in to Amazon ECR
+        id: ecr-login
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Build, tag & push
+        uses: ./.github/actions/docker-build
+        with:
+          context: ./${{ matrix.service }}
+          dockerfile: ./${{ matrix.service }}/Dockerfile
+          image-name: mypythonproject1/${{ matrix.service }}
+          registry: ${{ steps.ecr-login.outputs.registry }}
+          tags: |
+            type=raw,value=dev
+            type=sha,prefix=dev-,format=short
+          build-args: |
+            BUILD_ENV=dev
+            GIT_SHA=${{ github.sha }}
+          platforms: linux/amd64
+          scan: "true"
+          scan-severity: "CRITICAL,HIGH"
+          scan-exit-code: "0"
+          cache-scope: ${{ matrix.service }}-dev
+
+  infra-dev:
+    name: "Infra Apply [dev]"
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    needs: [build-dev]
+    environment: dev
+    steps:
+      - name: Dispatch terraform apply to infra repo
+        uses: actions/github-script@v7
+        with:
+          github-token: ${{ secrets.INFRA_DEPLOY_TOKEN }}
+          script: |
+            await github.rest.actions.createWorkflowDispatch({
+              owner: context.repo.owner,
+              repo: 'mypythonproject1-infra',
+              workflow_id: 'terraform-plan-apply.yml',
+              ref: 'main',
+              inputs: {
+                environment: 'dev',
+                action: 'apply',
+              },
+            });
+            console.log('Dispatched terraform-plan-apply on mypythonproject1-infra (dev)');
+
+      - name: Wait for infra apply
+        run: |
+          echo "Waiting 10 minutes for Terraform apply to complete..."
+          sleep 600
+
+  deploy-dev:
+    name: "ECS Deploy [dev] (${{ matrix.service }})"
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    needs: [infra-dev]
+    environment: dev
+    strategy:
+      matrix:
+        service: [backend, frontend]
+      fail-fast: false
+    permissions:
+      id-token: write
+    steps:
+      - name: Authenticate with AWS
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_TO_ASSUME }}
+          aws-region: ${{ secrets.AWS_REGION }}
+
+      - name: Force new ECS deployment
+        run: |
+          CLUSTER="mypythonproject1-dev-cluster"
+          SERVICE="mypythonproject1-dev-${{ matrix.service }}-service"
+          aws ecs update-service \
+            --cluster "$CLUSTER" \
+            --service  "$SERVICE" \
+            --force-new-deployment \
+            --region "${{ secrets.AWS_REGION }}"
+
+      - name: Wait for service stability
+        timeout-minutes: 15
+        run: |
+          CLUSTER="mypythonproject1-dev-cluster"
+          SERVICE="mypythonproject1-dev-${{ matrix.service }}-service"
+          aws ecs wait services-stable \
+            --cluster "$CLUSTER" \
+            --services "$SERVICE" \
+            --region "${{ secrets.AWS_REGION }}"
+
+  smoke-test-dev:
+    name: "Smoke Test [dev]"
+    needs: [deploy-dev]
+    uses: ./.github/workflows/_smoke-test.yml
+    with:
+      environment: dev
+      app-url: ${{ vars.APP_URL }}
+      warmup-seconds: 15
+      deploy-sha: ${{ github.sha }}
+    secrets: inherit
+
   build-staging:
     name: "Build & Push [staging] (${{ matrix.service }})"
     runs-on: ubuntu-latest
@@ -80,7 +210,6 @@ jobs:
       id-token: write
     outputs:
       registry: ${{ steps.ecr-login.outputs.registry }}
-      image-backend: ${{ steps.meta.outputs.tags }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -125,7 +254,7 @@ jobs:
     needs: [build-staging]
     environment: staging
     steps:
-      - name: Dispatch terraform-apply to infra repo
+      - name: Dispatch terraform apply to infra repo
         uses: actions/github-script@v7
         with:
           github-token: ${{ secrets.INFRA_DEPLOY_TOKEN }}
@@ -133,14 +262,14 @@ jobs:
             await github.rest.actions.createWorkflowDispatch({
               owner: context.repo.owner,
               repo: 'mypythonproject1-infra',
-              workflow_id: 'terraform-apply.yml',
+              workflow_id: 'terraform-plan-apply.yml',
               ref: 'main',
               inputs: {
                 environment: 'staging',
-                image_tag: 'staging',
+                action: 'apply',
               },
             });
-            console.log('Dispatched terraform-apply on mypythonproject1-infra (staging)');
+            console.log('Dispatched terraform-plan-apply on mypythonproject1-infra (staging)');
 
       # Give Terraform apply ~10 min to complete before ECS deploy
       - name: Wait for infra apply
@@ -316,23 +445,22 @@ jobs:
     needs: [build-production]
     environment: prod
     steps:
-      - name: Dispatch terraform-apply to infra repo
+      - name: Dispatch terraform apply to infra repo
         uses: actions/github-script@v7
         with:
           github-token: ${{ secrets.INFRA_DEPLOY_TOKEN }}
           script: |
-            const tag = context.ref.replace('refs/tags/', '');
             await github.rest.actions.createWorkflowDispatch({
               owner: context.repo.owner,
               repo: 'mypythonproject1-infra',
-              workflow_id: 'terraform-apply.yml',
+              workflow_id: 'terraform-plan-apply.yml',
               ref: 'main',
               inputs: {
-                environment: 'production',
-                image_tag: tag,
+                environment: 'prod',
+                action: 'apply',
               },
             });
-            console.log(`Dispatched terraform-apply on mypythonproject1-infra (production, tag=${tag})`);
+            console.log('Dispatched terraform-plan-apply on mypythonproject1-infra (prod)');
 
       - name: Wait for infra apply
         run: |
