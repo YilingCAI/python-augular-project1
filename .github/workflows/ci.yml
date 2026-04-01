@@ -57,7 +57,7 @@ jobs:
         timeout-minutes: 5
         if: github.event_name == 'pull_request'
         steps:
-            - uses: actions/checkout@v4
+            - uses: actions/checkout@v6
               with:
                   fetch-depth: 0
 
@@ -88,7 +88,7 @@ jobs:
             frontend: ${{ steps.filter.outputs.frontend }}
             ci: ${{ steps.filter.outputs.ci }}
         steps:
-            - uses: actions/checkout@v4
+            - uses: actions/checkout@v6
 
             - id: filter
               uses: dorny/paths-filter@v3
@@ -135,7 +135,7 @@ jobs:
                     
 
         steps:
-            - uses: actions/checkout@v4
+            - uses: actions/checkout@v6
 
             - name: Load test environment
               # Non-secret app vars (DATABASE_*, JWT_ALGORITHM, etc.) from config/.env.test
@@ -219,7 +219,7 @@ jobs:
         outputs:
             eslint-outcome: ${{ steps.eslint.outcome }}
         steps:
-            - uses: actions/checkout@v4
+            - uses: actions/checkout@v6
 
             - uses: actions/setup-node@v4
               with:
@@ -263,7 +263,7 @@ jobs:
         outputs:
             gitguardian-outcome: ${{ steps.gitguardian.outcome }}
         steps:
-            - uses: actions/checkout@v4
+            - uses: actions/checkout@v6
               with:
                   fetch-depth: 0
 
@@ -305,7 +305,7 @@ jobs:
             snyk-python-outcome: ${{ steps.snyk-python.outcome }}
             snyk-node-outcome: ${{ steps.snyk-node.outcome }}
         steps:
-            - uses: actions/checkout@v4
+            - uses: actions/checkout@v6
 
             - name: Snyk Python
               id: snyk-python
