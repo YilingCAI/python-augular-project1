@@ -63,7 +63,7 @@ jobs:
       # Both matrix legs write the same SHA; last-write-wins is safe here.
       sha-short: ${{ steps.meta.outputs.sha-short }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
         with:
           ref: ${{ inputs.git-ref }}
 
